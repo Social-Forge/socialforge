@@ -1,0 +1,5 @@
+./client.go
+./client_gen.go
+./doc.go
+./types.go
+./types_gen.go

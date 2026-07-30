@@ -1,0 +1,81 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "frontend: dev",
+      "type": "shell",
+      "command": "pnpm dev",
+      "options": {
+        "cwd": "${workspaceFolder:frontend}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend: check",
+      "type": "shell",
+      "command": "pnpm check",
+      "options": {
+        "cwd": "${workspaceFolder:frontend}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "mobile: start",
+      "type": "shell",
+      "command": "pnpm start",
+      "options": {
+        "cwd": "${workspaceFolder:mobile}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "mobile: lint",
+      "type": "shell",
+      "command": "pnpm lint",
+      "options": {
+        "cwd": "${workspaceFolder:mobile}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "backend: test",
+      "type": "shell",
+      "command": "go test ./...",
+      "options": {
+        "cwd": "${workspaceFolder:backend}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "backend: build",
+      "type": "shell",
+      "command": "go build ./...",
+      "options": {
+        "cwd": "${workspaceFolder:backend}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: up",
+      "type": "shell",
+      "command": "docker compose up -d --build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: down",
+      "type": "shell",
+      "command": "docker compose down",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

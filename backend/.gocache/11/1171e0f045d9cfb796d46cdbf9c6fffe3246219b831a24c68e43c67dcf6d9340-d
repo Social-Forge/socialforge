@@ -1,0 +1,4 @@
+./client.go
+./options.go
+./pipe.go
+./protocol.go

@@ -1,0 +1,9 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "golang.go",
+  "go.useLanguageServer": true,
+  "go.formatTool": "gofmt",
+  "go.lintTool": "golangci-lint",
+  "go.testFlags": ["-v"],
+  "files.eol": "\n"
+}

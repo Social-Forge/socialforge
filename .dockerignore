@@ -1,0 +1,26 @@
+# Build context = repo root (used by the web image). Keep it lean.
+.git
+.github
+.gitignore
+.trae
+.vscode
+.idea
+**/node_modules
+**/tmp
+**/*.exe
+**/*.log
+**/build
+**/coverage
+**/.cache
+**/.turbo
+apps/web/.env
+apps/web/.env.*
+apps/web/storage
+apps/web/tests
+apps/web/test-results
+# Sibling apps build in their own contexts — not needed for the web image
+apps/mobile
+docs
+*.md
+.env
+.env.*

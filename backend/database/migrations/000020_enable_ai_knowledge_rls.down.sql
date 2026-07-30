@@ -1,0 +1,6 @@
+BEGIN;
+
+DROP POLICY IF EXISTS tenant_isolation ON ai_knowledge;
+ALTER TABLE IF EXISTS ai_knowledge DISABLE ROW LEVEL SECURITY;
+
+COMMIT;

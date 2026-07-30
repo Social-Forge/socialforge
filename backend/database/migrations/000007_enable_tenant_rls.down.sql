@@ -1,0 +1,6 @@
+BEGIN;
+
+DROP POLICY IF EXISTS tenant_isolation ON divisions;
+ALTER TABLE IF EXISTS divisions DISABLE ROW LEVEL SECURITY;
+
+COMMIT;

@@ -1,0 +1,15 @@
+BEGIN;
+
+DROP POLICY IF EXISTS tenant_isolation ON subscriptions;
+ALTER TABLE IF EXISTS subscriptions DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON subscription_addons;
+ALTER TABLE IF EXISTS subscription_addons DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON invoices;
+ALTER TABLE IF EXISTS invoices DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON payment_events;
+ALTER TABLE IF EXISTS payment_events DISABLE ROW LEVEL SECURITY;
+
+COMMIT;

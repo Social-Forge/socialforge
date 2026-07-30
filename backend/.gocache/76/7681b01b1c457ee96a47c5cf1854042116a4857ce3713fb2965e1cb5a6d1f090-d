@@ -1,0 +1,4 @@
+./dbscan.go
+./doc.go
+./rowscanner.go
+./structref.go

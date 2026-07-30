@@ -1,0 +1,9 @@
+BEGIN;
+
+DROP POLICY IF EXISTS tenant_isolation ON ai_agents;
+ALTER TABLE IF EXISTS ai_agents DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON ai_credit_ledgers;
+ALTER TABLE IF EXISTS ai_credit_ledgers DISABLE ROW LEVEL SECURITY;
+
+COMMIT;

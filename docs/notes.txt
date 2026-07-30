@@ -1,0 +1,108 @@
+Bisa bantu saya sob ?
+
+Saya akan membuat sebuah project Messenger Platform CRM Multiagent dengan integrasi multi Channel social media api / platform seperti :
+- Whatsapp dengan devlikeapro/waha library docker install
+- Whatsapp Business Api Meta
+- Messenger Api Meta
+- Instagram APi Meta
+- Telegram
+
+Tujuan :
+- Pemakaian team pribadi kebutuhan pendukung online shop
+- Dan di juga akan dikomersilkan dengan system payment gateway Midtrans, Xendit & Paypal, jika semua fitur dan bug sudah siap
+
+Target App Development :
+- Web (Dengan Landing page frontend & Admin Panel, Chat Portal dan linnya)
+- Android React Native (Setelah Api Pindasi & Web App Selesai). Hanya untuk chat system only
+
+Framework Stack :
+- Adonisjs, Vite, Vue & Inertia
+- UI: Shadcn + tailwindcss dengan Dark / Light mode
+- DB: Postgresql, Redis, RabbitMQ
+- Storage: Minio
+- Deployment: Docker local (development) & Docker Ubuntu Server + Nginx (Production)
+- Additional: Centrifugo (Websocket jika diperlukan websocket versi advance untuk keperluan Web App & Mobile App)
+- Monitoring: Grafana, Promtheus, Loki & Promtail
+- Lainnya jika ada yang saya lupa sebutkan yang perlu ditambahkan sesuai rekomendasi
+
+Setup Channel Whatsapp devlikeapro :
+- Multi worker dengan berbagai macam images docker: WEBJS, NOWEB & GOWS dengan configurasi di seuaikan masing - masing dengan benar sesuai kebutuhan
+- Session: Postgresql
+- Storage: Minio
+- Lainnya sesuai rekomendasi untuk tambahan
+
+Setup Channel Meta Whatsapp Business, Messenger, Instagram & Telegram :
+- Session: Disesuaikan sesuai rekomendasi kamu sob
+- Storage: Minio
+- Lainnya sesuai rekomendasi untuk tambahan
+
+A. Fitur :
+- Multi Tenant dengan role permision: Divisi / Group -> Supervisor & CS Agent
+- Divisi: Pembagian group / kelompok oleh Owner dengan pengelompokkan Supervisor, Agent CS dan Channel - channel assign
+- Channel management dengan limit type User subscription. Add, Edit (Owner Only)
+- Management Add, Edit & Delete Supervisor (Owner permission)
+- Management Add, Edit & Delete Agent CS (Owner permission)
+- Management Contact pelanggan masuk yang kesimpan ke database dengan label channel (CRUD hanya Edit, Block, Delete & Export CSV)
+- AI Integration Pintar untuk membantu Auto chat response pelanggan AI Agent. Di bundle per token / subscription plan
+- Fitur Webchat - AI Chatbots And Agents (Floating Chat Bubble: Untuk diintegrationkan ke any website dalam bentuk script integratiion
+- Linkchat: Link seperti "wa.me", tapi ini untuk share link group
+- Management Label: Untuk menandai Convertation Chat oleh agent seperti (new customer, pending payment, delivered dan lainnya). Dengan custom label bisa dibuat oleh Owner, supervisor dan agent tetapi harus unique dalam 1 tenant
+- Blocked contact
+- Auto reject call untuk channel whatsapp WAHA, Jika di aktifkan ketika ada pelanggan telpon masuk auto reject dan auto response balas otomatis
+- Setup response otomatis untuk tiap - tiap channel (Owner & Supervisor permisiion only)
+- Setup agent working hourse (Owner & Supervisor)
+- Management balas cepat seperti pada ehatsapp business. Dengan type (Text Only, Text + Media Image & Text With Media Video). Struktur balas cepat (label shortcut & isi pesan / content)
+- Webhook untuk integration channel yang membutuhkan setup ini
+- Archived chat
+- Dan lainnya jika ada yang saya lupa sebutkan yang perlu ditambahkan sesuai rekomendasi
+
+B. User Type
+- User Tenant Registertration dengan akses free fiture default limit channel (1 Messenger, 1 Instagram, 1 Telegram, 1 Agent CS)
+- User Tenant Pro Subscription default memiliki limit channel: 1Whatsaap Waha, 1 Whatsapp Business Meta, 10 Messenger, 10 Instagram, 10 Telegram, 10 Agent CS termasuk supervisor, 100 Bals pesan cepat, Unlimited linkchat & Webchat, 1 AI Agent Integration dan fitur lainnya sesuai rekomendasi kamu sob). Jika ingin menambah slot maka beli paket tambahan
+- AI Integration default 1000 token atau diseuaikan sesuai rekomendasi. Jika ingin menambah token makan harus beli paket tambahan
+- Worker untuk penghitungan expired subscription
+- Dan lainnya jika ada yang saya lupa sebutkan yang perlu ditambahkan sesuai rekomendasi
+
+C: Fitu Chat :
+- Converstation room
+- Auto assign dengan type: Percentage, round robin dan lainnya
+- Tenant Owner & Supervisor bisa manual current Chat Conversation untuk pindahkan assign ke CS Agent Lain atau keluargant a=current agent dalam convertation
+- Pengelompokkan label Convertation
+- Agent bisa manual Keluar dari current converstation dan status Convertation menjadi unsign
+- Mark completed & uncompleted convertation
+- Emoji Input
+- Fitur ketik "/" di input room chat, untuk memunculkan shortcut balas cepet
+- Media Input (Image, Video, Document, Camera, Location Dan lainnya)
+- Recorder Audio Input
+- Bubble UI Chat dengan auto detect format pesan (Text Only, Text With Media Image, Text With Media Video, Text WIth Link dengan preview, Link Only Dengan Preview, Media Only (Image, Video, Audio, Document dan lainhya), Template Message, Location, Timmer Chat dan lainnya sesuai remonedasi sob)
+- Menu disamping cuucle chat dengan dropdown (Balas, Forward, Delete, Edit for own chat, Pin, Unpin)
+- Pinned user list convertation pada UI list sidebar chat
+- Pinned message pada room convertation
+- Filter by channel, label untuk Agent CS only
+- Filter by agent untuk owner & supervisor
+- Filter range date
+- Filter search pada Box li
+- Badge unread message pada item convertation
+- Bage total unread pada sidebar UI list convertation
+- Bade label & status unsign/completed/uncompleted pada list converstation sidebar
+- Archived chat
+- Label list
+- Dan lainnya jika ada yang saya lupa sebutkan yang perlu ditambahkan sesuai rekomendasi agar mirip dengan UI Fitur Whatsapp Web & Mobile App
+
+D: Website Convertation UI :
+- Buble UI Chat mirip seperti whatsapp web dengan avatar user / pelanggan (Fallback initial), chat content, User name, time, dan dropdown menu option per chat
+- Menekan lama pada list convertation bisa menampilkan menu drodown: Delete, Lepas Assign, BLocked, Mark Complete / Uncomplete, Tandai Label,Archived/Unarchived dan lainnya sesuai rekomendasi
+
+E: Mobile Convertation UI :
+- Sama seperti Website Converstation namun ini versi untuuk UI mobile react native, dan ada beberapa tambahan seperti buble chat bisa di geser / drag ke kanan untuk forward, ke kiri untuk balas dan lainnya seperti aplikasi whatsapp sob
+- Dan fitur lainnya sesuai rekomendasi agar menyerupai Mobile ehatsapp business app sob.
+
+F: Landing page frontend
+- Home Page, About, Contact, About, Privacy, Terms, Blog, Help Center, Career, Roadmap, Documentation
+- Dengan i18n (EN & ID)
+- Payment checkout invoice page dengan realtime webhook dari xendit/midtrans dan paypal
+
+
+Untu hal - hal lainnya yang belum saya sebutkan untk fitur, tech stack dan config lainnya mohon dilengkapi ya sob. dan juga refactor setup docker infrastructure jika masih ada yang belum sesuai atau belum ter setup
+
+Tapi sebelum eksekusi saya ingin diskusikan terlebih dahulu untuk mematenkan Architecture Roadmap nya, Dan jika sudah sesuai dibuatkan dalam bentu markdown file baru eksekusi codeing sob

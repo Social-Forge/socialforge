@@ -1,0 +1,27 @@
+FROM postgres:16-bookworm
+
+# Install packages untuk Debian
+RUN apt-get update && apt-get install -y \
+    vim nano \
+    postgresql-contrib \
+    postgresql-16-cron \
+    postgresql-16-pgvector \
+    net-tools \
+    iputils-ping \
+    htop \
+    tree \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Setup custom config
+RUN mkdir -p /etc/postgresql
+COPY docker/postgres/postgresql.conf /etc/postgresql/
+COPY docker/postgres/pg_hba.conf /etc/postgresql/
+RUN chown postgres:postgres /etc/postgresql/*.conf && chmod 600 /etc/postgresql/*.conf
+
+# Health check script
+COPY docker/postgres/healthcheck.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/healthcheck.sh
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh

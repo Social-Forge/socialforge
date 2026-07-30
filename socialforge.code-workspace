@@ -1,0 +1,25 @@
+{
+  "folders": [
+    {
+      "path": "frontend"
+    },
+    {
+      "path": "mobile"
+    },
+    {
+      "path": "backend"
+    }
+  ],
+  "settings": {},
+  "extensions": {
+    "recommendations": [
+      "svelte.svelte-vscode",
+      "expo.vscode-expo-tools",
+      "golang.go",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "bradlc.vscode-tailwindcss"
+    ],
+    "unwantedRecommendations": []
+  }
+}

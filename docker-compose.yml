@@ -1,0 +1,391 @@
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+networks:
+  social-forge:
+    driver: bridge
+
+volumes:
+  pg-data:
+  redis-data:
+  rabbitmq-data:
+  minio-data:
+  typesense-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile.postgres
+    container_name: socialforge-postgres
+    <<: [*restart, *logging]
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: ${DB_DATABASE:-social_forge}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      LANG: en_US.utf8
+      LC_ALL: en_US.utf8
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    networks: [social-forge]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-postgres} -d ${DB_DATABASE:-social_forge} || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c hba_file=/etc/postgresql/pg_hba.conf
+
+  redis:
+    image: redis:7-alpine
+    container_name: socialforge-redis
+    <<: [*restart, *logging]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379" # localhost only — SSH tunnel for remote
+    volumes:
+      - redis-data:/data
+    networks: [social-forge]
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    container_name: socialforge-centrifugo
+    <<: [*restart, *logging]
+    command: ["centrifugo", "--config=/centrifugo/config.json"]
+    volumes:
+      - ./docker/centrifugo/config.json:/centrifugo/config.json:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [social-forge]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  minio:
+    image: minio/minio:latest
+    container_name: socialforge-minio
+    <<: [*restart, *logging]
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_BROWSER_REDIRECT_URL}
+      MINIO_SERVER_URL: ${MINIO_SERVER_URL}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    networks: [social-forge]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+
+  waha-webjs:
+    image: devlikeapro/waha:latest
+    container_name: socialforge-waha-webjs
+    <<: [*restart, *logging]
+    environment:
+      WAHA_WORKER_ID: waha-worker-1
+      # API key the server enforces — MUST match WAHA_WEBJS_API_KEY the app sends as X-Api-Key.
+      WHATSAPP_API_KEY: ${WAHA_WEBJS_API_KEY:-}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_WEBJS_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_WEBJS_DASHBOARD_PASSWORD:-}
+      WHATSAPP_SESSIONS_POSTGRESQL_URL: ${WHATSAPP_SESSIONS_POSTGRESQL_URL:?set WHATSAPP_SESSIONS_POSTGRESQL_URL in .env}
+      WAHA_MEDIA_STORAGE: S3
+      WAHA_S3_REGION: ${MINIO_REGION:-eu-west-1}
+      WAHA_S3_BUCKET: ${MINIO_BUCKET:-waha}
+      WAHA_S3_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-waha}
+      WAHA_S3_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-waha}
+      WAHA_S3_ENDPOINT: http://minio:9000
+      WAHA_S3_FORCE_PATH_STYLE: true
+      WAHA_S3_PROXY_FILES: false
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [social-forge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  waha-noweb:
+    image: devlikeapro/waha:noweb
+    container_name: socialforge-waha-noweb
+    <<: [*restart, *logging]
+    environment:
+      WAHA_WORKER_ID: waha-worker-2
+      # API key the server enforces — MUST match WAHA_NOWEB_API_KEY the app sends as X-Api-Key.
+      WHATSAPP_API_KEY: ${WAHA_NOWEB_API_KEY:-}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_NOWEB_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_NOWEB_DASHBOARD_PASSWORD:-}
+      WHATSAPP_SESSIONS_POSTGRESQL_URL: ${WHATSAPP_SESSIONS_POSTGRESQL_URL:?set WHATSAPP_SESSIONS_POSTGRESQL_URL in .env}
+      WAHA_MEDIA_STORAGE: S3
+      WAHA_S3_REGION: ${MINIO_REGION:-eu-west-1}
+      WAHA_S3_BUCKET: ${MINIO_BUCKET:-waha}
+      WAHA_S3_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-waha}
+      WAHA_S3_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-waha}
+      WAHA_S3_ENDPOINT: http://minio:9000
+      WAHA_S3_FORCE_PATH_STYLE: true
+      WAHA_S3_PROXY_FILES: false
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks: [social-forge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  waha-gows:
+    image: devlikeapro/waha:gows
+    container_name: socialforge-waha-gows
+    <<: [*restart, *logging]
+    environment:
+      WAHA_WORKER_ID: waha-worker-3
+      GODEBUG: "netdns=go"
+      # API key the server enforces — MUST match WAHA_GOWS_API_KEY the app sends as X-Api-Key.
+      WHATSAPP_API_KEY: ${WAHA_GOWS_API_KEY:-}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_GOWS_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_GOWS_DASHBOARD_PASSWORD:-}
+      WHATSAPP_SESSIONS_POSTGRESQL_URL: ${WHATSAPP_SESSIONS_POSTGRESQL_URL:?set WHATSAPP_SESSIONS_POSTGRESQL_URL in .env}
+      WAHA_GOWS_DEVICE_REQUIRE_FULL_SYNC: ${WAHA_GOWS_DEVICE_REQUIRE_FULL_SYNC:-false}
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: ${WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT:-365}
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_RECENT_SYNC_DAYS_LIMIT: ${WAHA_GOWS_DEVICE_HISTORY_SYNC_RECENT_SYNC_DAYS_LIMIT:-30}
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_INITIAL_SYNC_MAX_MESSAGES_PER_CHAT: ${WAHA_GOWS_DEVICE_HISTORY_SYNC_INITIAL_SYNC_MAX_MESSAGES_PER_CHAT:-100}
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_SIZE_MB_LIMIT: ${WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_SIZE_MB_LIMIT:-512}
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_STORAGE_QUOTA_MB: ${WAHA_GOWS_DEVICE_HISTORY_SYNC_STORAGE_QUOTA_MB:-1024}
+      WAHA_GOWS_STATUS_PARTICIPANTS_BATCH_SIZE: ${WAHA_GOWS_STATUS_PARTICIPANTS_BATCH_SIZE:-500}
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_INLINE_INITIAL_PAYLOAD_IN_E2EE_MSG: ${WAHA_GOWS_DEVICE_HISTORY_SYNC_INLINE_INITIAL_PAYLOAD_IN_E2EE_MSG:-true}
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_THUMBNAIL_SYNC_DAYS_LIMIT: ${WAHA_GOWS_DEVICE_HISTORY_SYNC_THUMBNAIL_SYNC_DAYS_LIMIT:-90}
+      WAHA_MEDIA_STORAGE: S3
+      WAHA_S3_REGION: ${MINIO_REGION:-eu-west-1}
+      WAHA_S3_BUCKET: ${MINIO_BUCKET:-waha}
+      WAHA_S3_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-waha}
+      WAHA_S3_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-waha}
+      WAHA_S3_ENDPOINT: http://minio:9000
+      WAHA_S3_FORCE_PATH_STYLE: true
+      WAHA_S3_PROXY_FILES: false
+    ports:
+      - "127.0.0.1:3002:3000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    networks: [social-forge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: socialforge-rabbitmq
+    <<: [*restart, *logging]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-forge}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-social_forge}
+    ports:
+      # AMQP + management UI, bound to localhost (SSH-tunnel for remote access)
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    networks: [social-forge]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  typesense:
+    image: typesense/typesense:27.1
+    container_name: socialforge-typesense
+    <<: [*restart, *logging]
+    environment:
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:?set TYPESENSE_API_KEY in .env}
+      TYPESENSE_DATA_DIR: /data
+      TYPESENSE_ENABLE_CORS: "true"
+    ports:
+      - "127.0.0.1:${TYPESENSE_PORT:-8108}:8108"
+    volumes:
+      - typesense-data:/data
+    networks: [social-forge]
+    healthcheck:
+      # The Typesense image ships bash but no curl/wget — use a bash TCP probe.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8108"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ============================================================
+  # MONITORING STACK — opt-in: `docker compose --profile monitoring up -d`
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: socialforge-prometheus
+    profiles: [monitoring]
+    <<: [*restart, *logging]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks: [social-forge]
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: socialforge-loki
+    profiles: [monitoring]
+    <<: [*restart, *logging]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./docker/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks: [social-forge]
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: socialforge-promtail
+    profiles: [monitoring]
+    <<: [*restart, *logging]
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./docker/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log:ro
+    networks: [social-forge]
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: socialforge-grafana
+    profiles: [monitoring]
+    <<: [*restart, *logging]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3003}
+    ports:
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3003}:3000"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks: [social-forge]
+    depends_on:
+      - prometheus
+      - loki
+
+  postgres-exporter:
+    profiles: [monitoring]
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: socialforge-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE:-social_forge}?sslmode=disable"
+    depends_on: [postgres]
+    networks: [social-forge]
+
+  redis-exporter:
+    profiles: [monitoring]
+    image: oliver006/redis_exporter:latest
+    container_name: socialforge-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+    depends_on: [redis]
+    networks: [social-forge]
+
+  # nginx:
+  #   profiles: [proxy]
+  #   image: nginx:1.27-alpine
+  #   container_name: socialforge-nginx
+  #   restart: unless-stopped
+  #   depends_on: [app, centrifugo]
+  #   ports: ["80:80", "443:443"]
+  #   volumes:
+  #     - ./deploy/nginx/socialforge.conf:/etc/nginx/conf.d/socialforge.conf:ro
+  #     - /etc/letsencrypt:/etc/letsencrypt:ro
+  #   networks: [social-forge]

@@ -1,0 +1,18 @@
+BEGIN;
+
+DROP POLICY IF EXISTS tenant_isolation ON channels;
+ALTER TABLE IF EXISTS channels DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON conversations;
+ALTER TABLE IF EXISTS conversations DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON messages;
+ALTER TABLE IF EXISTS messages DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON message_outboxes;
+ALTER TABLE IF EXISTS message_outboxes DISABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON conversation_events;
+ALTER TABLE IF EXISTS conversation_events DISABLE ROW LEVEL SECURITY;
+
+COMMIT;

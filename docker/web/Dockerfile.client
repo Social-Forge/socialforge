@@ -1,0 +1,10 @@
+# ==========================================
+# Stage 1: Dependencies Stage
+# ==========================================
+FROM node:24-alpine AS base
+
+# Install required build dependencies
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
