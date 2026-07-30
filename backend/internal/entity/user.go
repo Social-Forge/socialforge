@@ -63,6 +63,19 @@ type UserTenantWithDetails struct {
 
 type UserTenantWithDetailsNested = UserTenantWithDetails
 
+func (u *UserTenantWithDetails) ToResponse() *UserResponse {
+	if u == nil {
+		return nil
+	}
+	response := u.User.ToResponse()
+	response.Tenant = &u.Tenant
+	response.Role = &u.Role
+	response.UserTenant = &u.UserTenant
+	response.RolePermissions = u.RolePermissions
+	response.Metadata = u.Metadata
+	return response
+}
+
 type UserResponse struct {
 	ID              uuid.UUID               `json:"id"`
 	TenantID        uuid.UUID               `json:"tenant_id,omitempty"`

@@ -58,9 +58,10 @@ type userRepository struct {
 }
 
 func NewUserRepository(db *pgxpool.Pool) UserRepository {
-	return &userRepository{
+	base := &userRepository{
 		baseRepository: NewBaseRepository(db).(*baseRepository),
 	}
+	return &schemaAwareUserRepository{UserRepository: base}
 }
 func (r *userRepository) Create(ctx context.Context, user *entity.User) error {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
@@ -68,22 +69,26 @@ func (r *userRepository) Create(ctx context.Context, user *entity.User) error {
 
 	query := `
 		INSERT INTO users (
-			id, email, username, password_hash, full_name, phone, avatar_url,
-			status, email_verified_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			id, tenant_id, role_id, full_name, email, password_hash, phone, avatar_url,
+			two_fa_secret, status, is_active, email_verified_at, last_login_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, created_at, updated_at
 	`
 	err := r.db.QueryRow(subCtx,
 		query,
 		user.ID,
-		user.Email,
-		user.Username,
-		user.PasswordHash,
+		user.TenantID,
+		user.RoleID,
 		user.FullName,
+		user.Email,
+		user.PasswordHash,
 		user.Phone,
 		user.AvatarURL,
+		user.TwoFaSecret,
 		user.Status,
+		user.IsActive,
 		user.EmailVerifiedAt,
+		user.LastLoginAt,
 		user.CreatedAt,
 	).Scan(
 		&user.ID,
@@ -94,14 +99,10 @@ func (r *userRepository) Create(ctx context.Context, user *entity.User) error {
 		var pgxErr *pgconn.PgError
 		if errors.As(err, &pgxErr) && pgxErr.Code == "23505" {
 			switch pgxErr.ConstraintName {
-			case "users_username_key":
-				return fmt.Errorf("username %s is already taken", user.Username)
 			case "users_email_key":
 				return fmt.Errorf("email %s is already registered", user.Email)
 			case "users_name_length_check":
 				return fmt.Errorf("full name %s is invalid, must be between 2 and 50 characters", user.FullName)
-			case "users_username_length_check":
-				return fmt.Errorf("username %s is invalid, must be between 3 and 20 characters", user.Username)
 			default:
 				return fmt.Errorf("unique constraint violation (%s): %w", pgxErr.ConstraintName, err)
 			}
@@ -116,22 +117,26 @@ func (r *userRepository) CreateTx(ctx context.Context, tx pgx.Tx, user *entity.U
 
 	query := `
 		INSERT INTO users (
-			id, email, username, password_hash, full_name, phone, avatar_url,
-			status, email_verified_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			id, tenant_id, role_id, full_name, email, password_hash, phone, avatar_url,
+			two_fa_secret, status, is_active, email_verified_at, last_login_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, created_at, updated_at
 	`
 	err := tx.QueryRow(subCtx,
 		query,
 		user.ID,
-		user.Email,
-		user.Username,
-		user.PasswordHash,
+		user.TenantID,
+		user.RoleID,
 		user.FullName,
+		user.Email,
+		user.PasswordHash,
 		user.Phone,
 		user.AvatarURL,
+		user.TwoFaSecret,
 		user.Status,
+		user.IsActive,
 		user.EmailVerifiedAt,
+		user.LastLoginAt,
 		user.CreatedAt,
 	).Scan(
 		&user.ID,
@@ -142,14 +147,10 @@ func (r *userRepository) CreateTx(ctx context.Context, tx pgx.Tx, user *entity.U
 		var pgxErr *pgconn.PgError
 		if errors.As(err, &pgxErr) && pgxErr.Code == "23505" {
 			switch pgxErr.ConstraintName {
-			case "users_username_key":
-				return fmt.Errorf("username %s is already taken", user.Username)
 			case "users_email_key":
 				return fmt.Errorf("email %s is already registered", user.Email)
 			case "users_name_length_check":
 				return fmt.Errorf("full name %s is invalid, must be between 2 and 50 characters", user.FullName)
-			case "users_username_length_check":
-				return fmt.Errorf("username %s is invalid, must be between 3 and 20 characters", user.Username)
 			default:
 				return fmt.Errorf("unique constraint violation (%s): %w", pgxErr.ConstraintName, err)
 			}
@@ -168,7 +169,12 @@ func (r *userRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.Us
 	defer cancel()
 
 	query := `
-		SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL
+		SELECT
+			id, tenant_id, role_id, split_part(email, '@', 1) AS username,
+			email, password_hash, full_name, phone, avatar_url, two_fa_secret,
+			status, (email_verified_at IS NOT NULL) AS is_verified,
+			email_verified_at, last_login_at, created_at, updated_at, deleted_at
+		FROM users WHERE id = $1 AND deleted_at IS NULL
 	`
 	var user entity.User
 	err := pgxscan.Get(subCtx, r.db, &user, query, id)
@@ -185,7 +191,12 @@ func (r *userRepository) FindByEmail(ctx context.Context, email string) (*entity
 	defer cancel()
 
 	query := `
-		SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL
+		SELECT
+			id, tenant_id, role_id, split_part(email, '@', 1) AS username,
+			email, password_hash, full_name, phone, avatar_url, two_fa_secret,
+			status, (email_verified_at IS NOT NULL) AS is_verified,
+			email_verified_at, last_login_at, created_at, updated_at, deleted_at
+		FROM users WHERE email = $1 AND deleted_at IS NULL
 	`
 	var user entity.User
 	err := pgxscan.Get(subCtx, r.db, &user, query, email)
@@ -202,7 +213,12 @@ func (r *userRepository) FindByTenantID(ctx context.Context, tenantID uuid.UUID)
 	defer cancel()
 
 	query := `
-		SELECT * FROM users WHERE tenant_id = $1 AND deleted_at IS NULL
+		SELECT
+			id, tenant_id, role_id, split_part(email, '@', 1) AS username,
+			email, password_hash, full_name, phone, avatar_url, two_fa_secret,
+			status, (email_verified_at IS NOT NULL) AS is_verified,
+			email_verified_at, last_login_at, created_at, updated_at, deleted_at
+		FROM users WHERE tenant_id = $1 AND deleted_at IS NULL
 	`
 	var user entity.User
 	err := pgxscan.Get(subCtx, r.db, &user, query, tenantID)
@@ -220,7 +236,12 @@ func (r *userRepository) FindByRoleID(ctx context.Context, roleID uuid.UUID) (*e
 	defer cancel()
 
 	query := `
-		SELECT * FROM users WHERE role_id = $1 AND deleted_at IS NULL
+		SELECT
+			id, tenant_id, role_id, split_part(email, '@', 1) AS username,
+			email, password_hash, full_name, phone, avatar_url, two_fa_secret,
+			status, (email_verified_at IS NOT NULL) AS is_verified,
+			email_verified_at, last_login_at, created_at, updated_at, deleted_at
+		FROM users WHERE role_id = $1 AND deleted_at IS NULL
 	`
 	var user entity.User
 	err := pgxscan.Get(subCtx, r.db, &user, query, roleID)
@@ -238,7 +259,12 @@ func (r *userRepository) FindByUsername(ctx context.Context, username string) (*
 	defer cancel()
 
 	query := `
-		SELECT * FROM users WHERE username = $1 AND deleted_at IS NULL
+		SELECT
+			id, tenant_id, role_id, split_part(email, '@', 1) AS username,
+			email, password_hash, full_name, phone, avatar_url, two_fa_secret,
+			status, (email_verified_at IS NOT NULL) AS is_verified,
+			email_verified_at, last_login_at, created_at, updated_at, deleted_at
+		FROM users WHERE split_part(email, '@', 1) = $1 AND deleted_at IS NULL
 	`
 	var user entity.User
 	err := pgxscan.Get(subCtx, r.db, &user, query, username)
@@ -255,7 +281,14 @@ func (r *userRepository) FindByEmailOrUsername(ctx context.Context, identifier s
 	defer cancel()
 
 	query := `
-		SELECT * FROM users WHERE (email = $1 OR username = $1) AND deleted_at IS NULL
+		SELECT
+			id, tenant_id, role_id, split_part(email, '@', 1) AS username,
+			email, password_hash, full_name, phone, avatar_url, two_fa_secret,
+			status, (email_verified_at IS NOT NULL) AS is_verified,
+			email_verified_at, last_login_at, created_at, updated_at, deleted_at
+		FROM users
+		WHERE (email = $1 OR split_part(email, '@', 1) = $1)
+		  AND deleted_at IS NULL
 	`
 	var user entity.User
 	err := pgxscan.Get(subCtx, r.db, &user, query, identifier)
@@ -840,24 +873,22 @@ func (r *userRepository) Update(ctx context.Context, user *entity.User) (*entity
 	query := `
 		UPDATE users SET
 			email = $1,
-			username = $2,
-			full_name = $3,
-			phone = $4,
-			avatar_url = $5,
+			full_name = $2,
+			phone = $3,
+			avatar_url = $4,
+			status = $5,
 			is_active = $6,
-			is_verified = $7,
-			email_verified_at = $8
-		WHERE id = $9 AND deleted_at IS NULL
-		RETURNING id, username, email, full_name, phone, avatar_url, is_active, is_verified, email_verified_at, last_login_at, created_at, updated_at
+			email_verified_at = $7
+		WHERE id = $8 AND deleted_at IS NULL
+		RETURNING id, tenant_id, role_id, split_part(email, '@', 1) AS username, email, full_name, phone, avatar_url, two_fa_secret, status, (email_verified_at IS NOT NULL) AS is_verified, email_verified_at, last_login_at, created_at, updated_at, deleted_at
 	`
 	args := []interface{}{
 		user.Email,
-		user.Username,
 		user.FullName,
 		user.Phone,
 		user.AvatarURL,
+		user.Status,
 		user.IsActive,
-		user.IsVerified,
 		user.EmailVerifiedAt,
 		user.ID,
 	}
@@ -868,17 +899,22 @@ func (r *userRepository) Update(ctx context.Context, user *entity.User) (*entity
 		query,
 		args...).Scan(
 		&updatedUser.ID,
+		&updatedUser.TenantID,
+		&updatedUser.RoleID,
 		&updatedUser.Username,
 		&updatedUser.Email,
 		&updatedUser.FullName,
 		&updatedUser.Phone,
 		&updatedUser.AvatarURL,
+		&updatedUser.TwoFaSecret,
+		&updatedUser.Status,
 		&updatedUser.IsActive,
 		&updatedUser.IsVerified,
 		&updatedUser.EmailVerifiedAt,
 		&updatedUser.LastLoginAt,
 		&updatedUser.CreatedAt,
 		&updatedUser.UpdatedAt,
+		&updatedUser.DeletedAt,
 	)
 
 	if err != nil {
@@ -908,24 +944,22 @@ func (r *userRepository) UpdateTx(ctx context.Context, tx pgx.Tx, user *entity.U
 	query := `
 		UPDATE users SET
 			email = $1,
-			username = $2,
-			full_name = $3,
-			phone = $4,
-			avatar_url = $5,
+			full_name = $2,
+			phone = $3,
+			avatar_url = $4,
+			status = $5,
 			is_active = $6,
-			is_verified = $7,
-			email_verified_at = $8
-		WHERE id = $9 AND deleted_at IS NULL
-		RETURNING id, username, email, full_name, phone, avatar_url, is_active, is_verified, email_verified_at, last_login_at, created_at, updated_at
+			email_verified_at = $7
+		WHERE id = $8 AND deleted_at IS NULL
+		RETURNING id, tenant_id, role_id, split_part(email, '@', 1) AS username, email, full_name, phone, avatar_url, two_fa_secret, status, (email_verified_at IS NOT NULL) AS is_verified, email_verified_at, last_login_at, created_at, updated_at, deleted_at
 	`
 	args := []interface{}{
 		user.Email,
-		user.Username,
 		user.FullName,
 		user.Phone,
 		user.AvatarURL,
+		user.Status,
 		user.IsActive,
-		user.IsVerified,
 		user.EmailVerifiedAt,
 		user.ID,
 	}
@@ -933,17 +967,22 @@ func (r *userRepository) UpdateTx(ctx context.Context, tx pgx.Tx, user *entity.U
 	updatedUser := &entity.User{}
 	err := tx.QueryRow(subCtx, query, args...).Scan(
 		&updatedUser.ID,
+		&updatedUser.TenantID,
+		&updatedUser.RoleID,
 		&updatedUser.Username,
 		&updatedUser.Email,
 		&updatedUser.FullName,
 		&updatedUser.Phone,
 		&updatedUser.AvatarURL,
+		&updatedUser.TwoFaSecret,
+		&updatedUser.Status,
 		&updatedUser.IsActive,
 		&updatedUser.IsVerified,
 		&updatedUser.EmailVerifiedAt,
 		&updatedUser.LastLoginAt,
 		&updatedUser.CreatedAt,
 		&updatedUser.UpdatedAt,
+		&updatedUser.DeletedAt,
 	)
 
 	if err != nil {
@@ -1210,7 +1249,7 @@ func (r *userRepository) ExistsByUsername(ctx context.Context, username string) 
 
 	query := `
 		SELECT EXISTS(
-			SELECT 1 FROM users WHERE username = $1 AND deleted_at IS NULL
+			SELECT 1 FROM users WHERE split_part(email, '@', 1) = $1 AND deleted_at IS NULL
 		)
 	`
 	args := []interface{}{
@@ -1286,7 +1325,7 @@ func (r *userRepository) buildBaseQuery(baseQuery string, filter *Filter) *Query
 
 	if filter.Search != "" {
 		searchPattern := "%" + filter.Search + "%"
-		qb.Where("(email ILIKE $? OR username ILIKE $? OR full_name ILIKE $?)",
+		qb.Where("(email ILIKE $? OR split_part(email, '@', 1) ILIKE $? OR full_name ILIKE $?)",
 			searchPattern, searchPattern, searchPattern)
 	}
 	if filter.IsActive != nil {
@@ -1338,11 +1377,11 @@ func (r *userRepository) CountUsersByRole(ctx context.Context, tenantID uuid.UUI
 	qb.Where("ut.deleted_at IS NULL")
 
 	if filter != nil {
-		if filter.Search != "" {
-			searchPattern := "%" + filter.Search + "%"
-			qb.Where("(u.full_name ILIKE $? OR u.email ILIKE $? OR u.username ILIKE $?)",
-				searchPattern, searchPattern, searchPattern)
-		}
+	if filter.Search != "" {
+		searchPattern := "%" + filter.Search + "%"
+		qb.Where("(u.full_name ILIKE $? OR u.email ILIKE $? OR split_part(u.email, '@', 1) ILIKE $?)",
+			searchPattern, searchPattern, searchPattern)
+	}
 
 		if filter.IsActive != nil {
 			qb.Where("u.is_active = $?", *filter.IsActive)

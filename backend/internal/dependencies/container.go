@@ -10,6 +10,7 @@ import (
 	"github/socialforge/internal/infra/contextpool"
 	"github/socialforge/internal/infra/metrics"
 	minioclient "github/socialforge/internal/infra/minio-client"
+	"github/socialforge/internal/infra/oauth"
 	redisclient "github/socialforge/internal/infra/redis-client"
 	"github/socialforge/internal/infra/repository"
 	typesenseclient "github/socialforge/internal/infra/typesense-client"
@@ -29,10 +30,13 @@ type Container struct {
 	RedisClient      *redisclient.RedisClient
 	CentrifugoClient *centrifugo.CentrifugoClient
 	TypesenseClient  *typesenseclient.TypesenseClient
+	SearchIndex      *typesenseclient.SearchIndexService
 	MinioClient      *minioclient.MinioClient
 	AIClient         *aiclient.AIClient
+	OAuthClient      *oauth.OAuthClient
 	RoleRepo         repository.RoleRepository
 	UserRepo         repository.UserRepository
+	OAuthRepo        repository.OAuthProviderRepository
 	SessionRepo      repository.SessionRepository
 	TokenRepo        repository.TokenRepository
 	TenantRepo       repository.TenantRepository
@@ -83,6 +87,13 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	} else {
 		logger.Warn("Typesense client not initialized because TYPESENSE_API_KEY is empty")
 	}
+	var searchIndex *typesenseclient.SearchIndexService
+	if typesenseClient != nil {
+		searchIndex = typesenseclient.NewSearchIndexService(typesenseClient, logger)
+		if err := searchIndex.Bootstrap(ctx); err != nil {
+			logger.Warn("Typesense bootstrap failed", zap.Error(err))
+		}
+	}
 
 	minio, err := minioclient.NewMinioClient(ctx, &init.MinIO, logger)
 	if err != nil {
@@ -93,9 +104,11 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ai client: %w", err)
 	}
+	oauthClient := oauth.NewOAuthClient(redis, init, logger)
 
 	roleRepo := repository.NewRoleRepository(dbPool.Pool)
 	userRepo := repository.NewUserRepository(dbPool.Pool)
+	oauthRepo := repository.NewOAuthProviderRepository(dbPool.Pool)
 	sessionRepo := repository.NewSessionRepository(dbPool.Pool)
 	tokenRepo := repository.NewTokenRepository(dbPool.Pool)
 	tenantRepo := repository.NewTenantRepository(dbPool.Pool)
@@ -126,10 +139,13 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		RedisClient:      redis,
 		CentrifugoClient: centrifugoClient,
 		TypesenseClient:  typesenseClient,
+		SearchIndex:      searchIndex,
 		MinioClient:      minio,
 		AIClient:         aiClient,
+		OAuthClient:      oauthClient,
 		RoleRepo:         roleRepo,
 		UserRepo:         userRepo,
+		OAuthRepo:        oauthRepo,
 		SessionRepo:      sessionRepo,
 		TokenRepo:        tokenRepo,
 		TenantRepo:       tenantRepo,

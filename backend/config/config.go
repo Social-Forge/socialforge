@@ -37,6 +37,7 @@ type Config struct {
 	AI         AIConfig
 	Email      EmailConfig
 	Payment    PaymentConfig
+	OAuth      OAuthConfig
 }
 type AppConfig struct {
 	Name          string
@@ -164,6 +165,14 @@ type PaymentConfig struct {
 	PaypalClientSecret string
 	PaypalWebhookId    string
 	PaypalisProd       bool
+}
+type OAuthConfig struct {
+	GoogleClientId       string
+	GoogleClientSecret   string
+	FacebookClientId     string
+	FacebookClientSecret string
+	GithubClientId       string
+	GithubClientSecret   string
 }
 
 func Load() (*Config, error) {
@@ -300,6 +309,14 @@ func Load() (*Config, error) {
 			PaypalClientSecret: getEnv("PAYPAL_CLIENT_SECRET", ""),
 			PaypalWebhookId:    getEnv("PAYPAL_WEBHOOK_ID", ""),
 			PaypalisProd:       getEnv("PAYPAL_MODE", "") == "production",
+		},
+		OAuth: OAuthConfig{
+			GoogleClientId:       getEnv("GOOGLE_CLIENT_ID", ""),
+			GoogleClientSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
+			FacebookClientId:     getEnv("FACEBOOK_CLIENT_ID", ""),
+			FacebookClientSecret: getEnv("FACEBOOK_CLIENT_SECRET", ""),
+			GithubClientId:       getEnv("GITHUB_CLIENT_ID", ""),
+			GithubClientSecret:   getEnv("GITHUB_CLIENT_SECRET", ""),
 		},
 	}
 

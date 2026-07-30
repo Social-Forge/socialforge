@@ -55,36 +55,34 @@ func (r *tenantRepository) Create(ctx context.Context, tenant *entity.Tenant) er
 
 	query := `
 		INSERT INTO tenants (
-			id, name, slug, owner_id, logo_url, description,
-			max_divisions, max_agents, max_quick_replies, max_pages,
-			max_whatsapp, max_meta_whatsapp, max_meta_messenger, max_instagram, max_telegram, max_webchat, max_linkchat,
-			subscription_plan, subscription_status, trial_ends_at, is_active, created_at
+			id, name, slug, max_divisions, max_agents, max_quick_replies,
+			max_waha_whatsapp, max_meta_whatsapp, max_meta_messenger, max_instagram,
+			max_telegram, max_webchat, max_linkchat, ai_credits,
+			subscription_plan, subscription_status, trial_ends_at, is_active, settings, created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
 		) ON CONFLICT (slug) DO NOTHING RETURNING id, created_at, updated_at`
 
 	args := []interface{}{
 		tenant.ID,
 		tenant.Name,
 		tenant.Slug,
-		tenant.OwnerID,
-		tenant.LogoURL,
-		tenant.Description,
 		tenant.MaxDivisions,
 		tenant.MaxAgents,
 		tenant.MaxQuickReplies,
-		tenant.MaxPages,
-		tenant.MaxWhatsApp,
+		tenant.MaxWahaWhatsApp,
 		tenant.MaxMetaWhatsApp,
 		tenant.MaxMetaMessenger,
 		tenant.MaxInstagram,
 		tenant.MaxTelegram,
 		tenant.MaxWebChat,
 		tenant.MaxLinkChat,
+		tenant.AiCredits,
 		tenant.SubscriptionPlan,
 		tenant.SubscriptionStatus,
 		tenant.TrialEndsAt,
 		tenant.IsActive,
+		tenant.Settings,
 		tenant.CreatedAt,
 	}
 
@@ -116,36 +114,34 @@ func (r *tenantRepository) CreateTx(ctx context.Context, tx pgx.Tx, tenant *enti
 
 	query := `
 		INSERT INTO tenants (
-			id, name, slug, owner_id, logo_url, description,
-			max_divisions, max_agents, max_quick_replies, max_pages,
-			max_whatsapp, max_meta_whatsapp, max_meta_messenger, max_instagram, max_telegram, max_webchat, max_linkchat,
-			subscription_plan, subscription_status, trial_ends_at, is_active, created_at
+			id, name, slug, max_divisions, max_agents, max_quick_replies,
+			max_waha_whatsapp, max_meta_whatsapp, max_meta_messenger, max_instagram,
+			max_telegram, max_webchat, max_linkchat, ai_credits,
+			subscription_plan, subscription_status, trial_ends_at, is_active, settings, created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
 		) ON CONFLICT (slug) DO NOTHING RETURNING id, created_at, updated_at`
 
 	args := []interface{}{
 		tenant.ID,
 		tenant.Name,
 		tenant.Slug,
-		tenant.OwnerID,
-		tenant.LogoURL,
-		tenant.Description,
 		tenant.MaxDivisions,
 		tenant.MaxAgents,
 		tenant.MaxQuickReplies,
-		tenant.MaxPages,
-		tenant.MaxWhatsApp,
+		tenant.MaxWahaWhatsApp,
 		tenant.MaxMetaWhatsApp,
 		tenant.MaxMetaMessenger,
 		tenant.MaxInstagram,
 		tenant.MaxTelegram,
 		tenant.MaxWebChat,
 		tenant.MaxLinkChat,
+		tenant.AiCredits,
 		tenant.SubscriptionPlan,
 		tenant.SubscriptionStatus,
 		tenant.TrialEndsAt,
 		tenant.IsActive,
+		tenant.Settings,
 		tenant.CreatedAt,
 	}
 	err := tx.QueryRow(subCtx, query, args...).Scan(
@@ -210,46 +206,10 @@ func (r *tenantRepository) FindBySlug(ctx context.Context, slug string) (*entity
 	return &tenant, nil
 }
 func (r *tenantRepository) FindByOwnerID(ctx context.Context, ownerID uuid.UUID) ([]*entity.Tenant, error) {
-	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
-	defer cancel()
-
-	if ownerID == uuid.Nil {
-		return nil, fmt.Errorf("owner id is required")
-	}
-
-	query := `
-		SELECT * FROM tenants WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC
-	`
-	var tenants []*entity.Tenant
-	err := pgxscan.Select(subCtx, r.db, &tenants, query, ownerID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("tenant not found: %w", err)
-		}
-		return nil, fmt.Errorf("failed to find tenant by owner id: %w", err)
-	}
-	return tenants, nil
+	return []*entity.Tenant{}, fmt.Errorf("owner-based tenant lookup is not supported by the current schema")
 }
 func (r *tenantRepository) FindByUserTenantID(ctx context.Context, userTenantID uuid.UUID) (*entity.Tenant, error) {
-	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
-	defer cancel()
-
-	if userTenantID == uuid.Nil {
-		return nil, fmt.Errorf("user tenant id is required")
-	}
-
-	query := `
-		SELECT * FROM tenants WHERE user_tenant_id = $1 AND deleted_at IS NULL
-	`
-	var tenant entity.Tenant
-	err := pgxscan.Get(subCtx, r.db, &tenant, query, userTenantID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("tenant not found: %w", err)
-		}
-		return nil, fmt.Errorf("failed to find tenant by user tenant id: %w", err)
-	}
-	return &tenant, nil
+	return nil, fmt.Errorf("user-tenant lookup is not supported by the current schema")
 }
 
 func (r *tenantRepository) Search(ctx context.Context, opts *ListOptions) ([]*entity.Tenant, int64, error) {
@@ -317,56 +277,73 @@ func (r *tenantRepository) Update(ctx context.Context, tenant *entity.Tenant) (*
 		UPDATE tenants SET
 			name = $1,
 			slug = $2,
-			logo_url = $3,
-			description = $4,
-			subscription_plan = $5,
-			subscription_status = $6,
-			trial_ends_at = $7,
-			is_active = $8
-		WHERE id = $9 AND deleted_at IS NULL
-		RETURNING id, slug, name, owner_id, logo_url, description, 
-		max_divisions, max_agents, max_quick_replies, max_pages, max_whatsapp,
+			max_divisions = $3,
+			max_agents = $4,
+			max_quick_replies = $5,
+			max_waha_whatsapp = $6,
+			max_meta_whatsapp = $7,
+			max_meta_messenger = $8,
+			max_instagram = $9,
+			max_telegram = $10,
+			max_webchat = $11,
+			max_linkchat = $12,
+			ai_credits = $13,
+			subscription_plan = $14,
+			subscription_status = $15,
+			trial_ends_at = $16,
+			is_active = $17,
+			settings = $18
+		WHERE id = $19 AND deleted_at IS NULL
+		RETURNING id, name, slug, max_divisions, max_agents, max_quick_replies, max_waha_whatsapp,
 		max_meta_whatsapp, max_meta_messenger, max_instagram, max_telegram,
-		max_webchat, max_linkchat, subscription_plan, subscription_status, trial_ends_at,
-		is_active, created_at, updated_at
+		max_webchat, max_linkchat, ai_credits, subscription_plan, subscription_status, trial_ends_at,
+		is_active, settings, created_at, updated_at, deleted_at
 	`
 	args := []interface{}{
 		tenant.Name,
 		tenant.Slug,
-		tenant.LogoURL,
-		tenant.Description,
+		tenant.MaxDivisions,
+		tenant.MaxAgents,
+		tenant.MaxQuickReplies,
+		tenant.MaxWahaWhatsApp,
+		tenant.MaxMetaWhatsApp,
+		tenant.MaxMetaMessenger,
+		tenant.MaxInstagram,
+		tenant.MaxTelegram,
+		tenant.MaxWebChat,
+		tenant.MaxLinkChat,
+		tenant.AiCredits,
 		tenant.SubscriptionPlan,
 		tenant.SubscriptionStatus,
 		tenant.TrialEndsAt,
 		tenant.IsActive,
+		tenant.Settings,
 		tenant.ID,
 	}
 
 	updateTenant := &entity.Tenant{}
 	err := r.db.QueryRow(subCtx, query, args...).Scan(
 		&updateTenant.ID,
-		&updateTenant.Slug,
 		&updateTenant.Name,
-		&updateTenant.OwnerID,
-		&updateTenant.LogoURL,
-		&updateTenant.Description,
 		&updateTenant.MaxDivisions,
 		&updateTenant.MaxAgents,
 		&updateTenant.MaxQuickReplies,
-		&updateTenant.MaxPages,
-		&updateTenant.MaxWhatsApp,
+		&updateTenant.MaxWahaWhatsApp,
 		&updateTenant.MaxMetaWhatsApp,
 		&updateTenant.MaxMetaMessenger,
 		&updateTenant.MaxInstagram,
 		&updateTenant.MaxTelegram,
 		&updateTenant.MaxWebChat,
 		&updateTenant.MaxLinkChat,
+		&updateTenant.AiCredits,
 		&updateTenant.SubscriptionPlan,
 		&updateTenant.SubscriptionStatus,
 		&updateTenant.TrialEndsAt,
 		&updateTenant.IsActive,
+		&updateTenant.Settings,
 		&updateTenant.CreatedAt,
 		&updateTenant.UpdatedAt,
+		&updateTenant.DeletedAt,
 	)
 	if err != nil {
 		var pgxErr *pgconn.PgError
@@ -390,56 +367,73 @@ func (r *tenantRepository) UpdateTx(ctx context.Context, tx pgx.Tx, tenant *enti
 		UPDATE tenants SET
 			name = $1,
 			slug = $2,
-			logo_url = $3,
-			description = $4,
-			subscription_plan = $5,
-			subscription_status = $6,
-			trial_ends_at = $7,
-			is_active = $8
-		WHERE id = $9 AND deleted_at IS NULL
-		RETURNING id, slug, name, owner_id, logo_url, description, 
-		max_divisions, max_agents, max_quick_replies, max_pages, max_whatsapp,
+			max_divisions = $3,
+			max_agents = $4,
+			max_quick_replies = $5,
+			max_waha_whatsapp = $6,
+			max_meta_whatsapp = $7,
+			max_meta_messenger = $8,
+			max_instagram = $9,
+			max_telegram = $10,
+			max_webchat = $11,
+			max_linkchat = $12,
+			ai_credits = $13,
+			subscription_plan = $14,
+			subscription_status = $15,
+			trial_ends_at = $16,
+			is_active = $17,
+			settings = $18
+		WHERE id = $19 AND deleted_at IS NULL
+		RETURNING id, name, slug, max_divisions, max_agents, max_quick_replies, max_waha_whatsapp,
 		max_meta_whatsapp, max_meta_messenger, max_instagram, max_telegram,
-		max_webchat, max_linkchat, subscription_plan, subscription_status, trial_ends_at,
-		is_active, created_at, updated_at
+		max_webchat, max_linkchat, ai_credits, subscription_plan, subscription_status, trial_ends_at,
+		is_active, settings, created_at, updated_at, deleted_at
 	`
 	args := []interface{}{
 		tenant.Name,
 		tenant.Slug,
-		tenant.LogoURL,
-		tenant.Description,
+		tenant.MaxDivisions,
+		tenant.MaxAgents,
+		tenant.MaxQuickReplies,
+		tenant.MaxWahaWhatsApp,
+		tenant.MaxMetaWhatsApp,
+		tenant.MaxMetaMessenger,
+		tenant.MaxInstagram,
+		tenant.MaxTelegram,
+		tenant.MaxWebChat,
+		tenant.MaxLinkChat,
+		tenant.AiCredits,
 		tenant.SubscriptionPlan,
 		tenant.SubscriptionStatus,
 		tenant.TrialEndsAt,
 		tenant.IsActive,
+		tenant.Settings,
 		tenant.ID,
 	}
 
 	updateTenant := &entity.Tenant{}
 	err := tx.QueryRow(subCtx, query, args...).Scan(
 		&updateTenant.ID,
-		&updateTenant.Slug,
 		&updateTenant.Name,
-		&updateTenant.OwnerID,
-		&updateTenant.LogoURL,
-		&updateTenant.Description,
 		&updateTenant.MaxDivisions,
 		&updateTenant.MaxAgents,
 		&updateTenant.MaxQuickReplies,
-		&updateTenant.MaxPages,
-		&updateTenant.MaxWhatsApp,
+		&updateTenant.MaxWahaWhatsApp,
 		&updateTenant.MaxMetaWhatsApp,
 		&updateTenant.MaxMetaMessenger,
 		&updateTenant.MaxInstagram,
 		&updateTenant.MaxTelegram,
 		&updateTenant.MaxWebChat,
 		&updateTenant.MaxLinkChat,
+		&updateTenant.AiCredits,
 		&updateTenant.SubscriptionPlan,
 		&updateTenant.SubscriptionStatus,
 		&updateTenant.TrialEndsAt,
 		&updateTenant.IsActive,
+		&updateTenant.Settings,
 		&updateTenant.CreatedAt,
 		&updateTenant.UpdatedAt,
+		&updateTenant.DeletedAt,
 	)
 	if err != nil {
 		var pgxErr *pgconn.PgError
@@ -477,9 +471,9 @@ func (r *tenantRepository) UpdateLogo(ctx context.Context, tenantID uuid.UUID, l
 
 	query := `
 		UPDATE tenants SET
-			logo_url = $1
+			settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{logo_url}', to_jsonb($1::text), true)
 		WHERE id = $2 AND deleted_at IS NULL AND is_active = true
-		RETURNING logo_url
+		RETURNING settings->>'logo_url'
 	`
 	args := []interface{}{
 		logoURL,

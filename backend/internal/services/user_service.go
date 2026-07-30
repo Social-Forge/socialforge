@@ -24,7 +24,6 @@ type UserService struct {
 	roleRepo       repository.RoleRepository
 	tenantRepo     repository.TenantRepository
 	divisiRepo     repository.DivisionRepository
-	userTenantRepo repository.UserTenantRepository
 	userHelper     *helpers.UserHelper
 	tokenHelper    *helpers.TokenHelper
 	logger         *zap.Logger
@@ -36,7 +35,6 @@ func NewUserService(
 	roleRepo repository.RoleRepository,
 	tenantRepo repository.TenantRepository,
 	divisiRepo repository.DivisionRepository,
-	userTenantRepo repository.UserTenantRepository,
 	userHelper *helpers.UserHelper,
 	tokenHelper *helpers.TokenHelper,
 	logger *zap.Logger,
@@ -47,7 +45,6 @@ func NewUserService(
 		roleRepo:       roleRepo,
 		tenantRepo:     tenantRepo,
 		divisiRepo:     divisiRepo,
-		userTenantRepo: userTenantRepo,
 		userHelper:     userHelper,
 		tokenHelper:    tokenHelper,
 		logger:         logger,

@@ -21,7 +21,6 @@ func NewUserFactory(cont *dependencies.Container, mw *MiddlewareFactory) *UserFa
 		cont.RoleRepo,
 		cont.TenantRepo,
 		cont.DivisionRepo,
-		cont.UserTenantRepo,
 		cont.UserHelper,
 		cont.TokenHelper,
 		cont.Logger,

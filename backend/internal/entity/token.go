@@ -34,6 +34,7 @@ type RedisSessionData struct {
 	PermissionAction   []string           `json:"permission_action"`
 	SessionID          string             `json:"session_id"`
 	UserTenant         UserTenantWithDetails `json:"user_tenant"`
+	Metadata           map[string]any     `json:"metadata,omitempty"`
 	IssuedAt           int64              `json:"issued_at"`
 	LastAccessed       int64              `json:"last_accessed"`
 }

@@ -27,6 +27,8 @@ func NewAuthRoutes(handler *handlers.AuthHandler, ctxinject *middlewares.Context
 func (r *AuthRoutes) RegisterRoutes(app fiber.Router) {
 	router := app.Group(r.path)
 	router.Post("/register", r.handler.Register)
+	router.Get("/:provider", r.handler.OAuthRedirect)
+	router.Get("/:provider/callback", r.handler.OAuthCallback)
 	router.Post("/login",
 		r.ctxinject.SetTimeout(10*time.Second),
 		r.rateLimit.BaseLimiter("login", 5, 5*time.Minute),

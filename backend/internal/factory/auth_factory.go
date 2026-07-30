@@ -18,12 +18,12 @@ type AuthFactory struct {
 func NewAuthFactory(container *dependencies.Container, mw *MiddlewareFactory) *AuthFactory {
 	service := services.NewAuthService(
 		container.UserRepo,
+		container.OAuthRepo,
 		container.RoleRepo,
-		container.PermissionRepo,
 		container.SessionRepo,
 		container.TenantRepo,
-		container.UserTenantRepo,
 		container.TokenRepo,
+		container.SearchIndex,
 		mw.RateLimiter,
 		container.TokenHelper,
 		container.AuthHelper,
@@ -31,7 +31,8 @@ func NewAuthFactory(container *dependencies.Container, mw *MiddlewareFactory) *A
 		container.Logger,
 		container.Config.JWT.Secret,
 		container.Config.JWT.ExpireHours,
-		container.Config.JWT.RefreshExpireHours)
+		container.Config.JWT.RefreshExpireHours,
+	)
 
 	handler := handlers.NewAuthHandler(
 		mw.ContextMiddleware,
