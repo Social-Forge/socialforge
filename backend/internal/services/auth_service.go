@@ -103,7 +103,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 		return nil, fmt.Errorf("invalid credentials. %d attempts remaining", remaining)
 	}
 
-	if !user.IsActive() {
+	if !user.CanLogin() {
 		s.logger.Warn("Login failed: user inactive",
 			zap.String("identifier", req.Identifier),
 			zap.Any("user_id", user.ID),
@@ -905,7 +905,7 @@ func (s *AuthService) CheckPermission(ctx context.Context, userID uuid.UUID, per
 		return dto.ErrUserNotFound
 	}
 
-	if !user.IsActive() {
+	if !user.CanLogin() {
 		return dto.ErrUserInactive
 	}
 

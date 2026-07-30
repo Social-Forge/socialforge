@@ -10,7 +10,6 @@ type Tenant struct {
 	ID                 uuid.UUID            `json:"id" db:"id"`
 	Name               string               `json:"name" db:"name" validate:"required,max=255"`
 	Slug               string               `json:"slug" db:"slug" validate:"required,max=100"`
-	Description        NullString           `json:"description,omitempty" db:"description"`
 	MaxDivisions       int                  `json:"max_divisions" db:"max_divisions"`
 	MaxAgents          int                  `json:"max_agents" db:"max_agents"`
 	MaxQuickReplies    int                  `json:"max_quick_replies" db:"max_quick_replies"`
@@ -21,15 +20,20 @@ type Tenant struct {
 	MaxTelegram        int                  `json:"max_telegram" db:"max_telegram"`
 	MaxWebChat         int                  `json:"max_webchat" db:"max_webchat"`
 	MaxLinkChat        int                  `json:"max_linkchat" db:"max_linkchat"`
-	AiCredit           int                  `json:"ai_credit" db:"ai_credit"`
+	AiCredits          int                  `json:"ai_credits" db:"ai_credits"`
 	SubscriptionPlan   string               `json:"subscription_plan" db:"subscription_plan" validate:"required,oneof=free starter pro enterprise"`
-	SubscriptionStatus string               `json:"subscription_status" db:"subscription_status" validate:"required,oneof=active suspended cancelled expired"`
+	SubscriptionStatus string               `json:"subscription_status" db:"subscription_status" validate:"required,oneof=active suspended canceled expired"`
 	TrialEndsAt        NullTime             `json:"trial_ends_at,omitempty" db:"trial_ends_at"`
 	IsActive           bool                 `json:"is_active" db:"is_active"`
-	Setting            *TenantSettingConfig `json:"setting,omitempty" db:"setting"`
+	Settings           *TenantSettingConfig `json:"settings,omitempty" db:"settings"`
 	CreatedAt          time.Time            `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time            `json:"updated_at" db:"updated_at"`
 	DeletedAt          NullTime             `json:"deleted_at,omitempty" db:"deleted_at"`
+	Description        NullString           `json:"description,omitempty" db:"-"`
+	LogoURL            NullString           `json:"logo_url,omitempty" db:"-"`
+	OwnerID            uuid.UUID            `json:"owner_id,omitempty" db:"-"`
+	MaxPages           int                  `json:"max_pages,omitempty" db:"-"`
+	MaxWhatsApp        int                  `json:"max_whatsapp,omitempty" db:"-"`
 }
 
 type TenantSettingConfig map[string]interface{}
@@ -44,7 +48,7 @@ const (
 const (
 	StatusActive    = "active"
 	StatusSuspended = "suspended"
-	StatusCancelled = "cancelled"
+	StatusCancelled = "canceled"
 	StatusExpired   = "expired"
 )
 

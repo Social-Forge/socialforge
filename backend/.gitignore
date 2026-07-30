@@ -1,1 +1,4 @@
 Makefile
+.gocache/
+tmp/
+logs/
