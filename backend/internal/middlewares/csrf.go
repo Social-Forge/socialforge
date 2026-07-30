@@ -38,7 +38,6 @@ func NewCSRFMiddleware(notifier config.Notifier, ctxinject *ContextMiddleware, t
 func (m *CSRFMiddleware) CSRFProtect() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx := m.ctxinject.From(c)
-		defer m.ctxinject.LogDuration(ctx, c.Path())()
 
 		provided := c.Get("X-XSRF-TOKEN")
 		if provided == "" {

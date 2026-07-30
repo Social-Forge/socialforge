@@ -9,10 +9,12 @@ CREATE TABLE IF NOT EXISTS conversations (
   is_archived BOOLEAN NOT NULL DEFAULT FALSE,
   unread_count INTEGER NOT NULL DEFAULT 0,
   last_message_at TIMESTAMPTZ,
+  -- Meta 24-hour customer service window (null for channels without one). --
   service_window_expires_at TIMESTAMPTZ,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT conversations_status_check CHECK (status IN ('open', 'unassigned', 'completed', 'archived'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversations_channel_id_contact_id ON conversations(channel_id, contact_id);

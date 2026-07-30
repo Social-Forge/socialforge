@@ -1,6 +1,9 @@
 package dto
 
-import "errors"
+import (
+	"errors"
+	"github/socialforge/internal/entity"
+)
 
 var (
 	ErrEmailAlreadyExists    = errors.New("email already exists")
@@ -25,4 +28,17 @@ type EnableTwoFactorRequest struct {
 }
 type ActivateTwoFactorRequest struct {
 	Code string `json:"code" validate:"required"`
+}
+type UserProfileResponse struct {
+	User      *entity.User       `json:"user"`
+	Tenant    *entity.Tenant     `json:"tenant"`
+	Role      *entity.Role       `json:"role"`
+	Divisions []*entity.Division `json:"divisions"`
+}
+
+type UserTenantResponse struct {
+	User      *entity.User   `json:"user"`
+	Tenant    *entity.Tenant `json:"tenant"`
+	Role      *entity.Role   `json:"role"`
+	Divisions []string       `json:"divisions"` // List of division names/slugs
 }

@@ -1,9 +1,25 @@
 package entity
 
 import (
+	"database/sql/driver"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+const (
+	PlanFree       = "free"
+	PlanStarter    = "starter"
+	PlanPro        = "pro"
+	PlanEnterprise = "enterprise"
+)
+
+const (
+	StatusActive    = "active"
+	StatusSuspended = "suspended"
+	StatusCancelled = "canceled"
+	StatusExpired   = "expired"
 )
 
 type Tenant struct {
@@ -29,37 +45,31 @@ type Tenant struct {
 	CreatedAt          time.Time            `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time            `json:"updated_at" db:"updated_at"`
 	DeletedAt          NullTime             `json:"deleted_at,omitempty" db:"deleted_at"`
-	Description        NullString           `json:"description,omitempty" db:"-"`
-	LogoURL            NullString           `json:"logo_url,omitempty" db:"-"`
-	OwnerID            uuid.UUID            `json:"owner_id,omitempty" db:"-"`
-	MaxPages           int                  `json:"max_pages,omitempty" db:"-"`
-	MaxWhatsApp        int                  `json:"max_whatsapp,omitempty" db:"-"`
+	// Transient profile fields backed by the settings JSONB (see UpdateLogo),
+	// not dedicated columns. db:"-" so they are ignored by SELECT * scans.
+	Description NullString `json:"description,omitempty" db:"-"`
+	LogoURL     NullString `json:"logo_url,omitempty" db:"-"`
 }
 
 type TenantSettingConfig map[string]interface{}
 
-const (
-	PlanFree       = "free"
-	PlanStarter    = "starter"
-	PlanPro        = "pro"
-	PlanEnterprise = "enterprise"
-)
-
-const (
-	StatusActive    = "active"
-	StatusSuspended = "suspended"
-	StatusCancelled = "canceled"
-	StatusExpired   = "expired"
-)
-
-type TenantWithOwner struct {
-	Tenant
-	Owner *User `json:"owner,omitempty"`
+func (ts TenantSettingConfig) Value() (driver.Value, error) {
+	if ts == nil {
+		return nil, nil
+	}
+	return json.Marshal(ts)
 }
-type TenantOrganizationData struct {
-	Divisions   []Division `json:"divisions"`
-	Supervisors []User     `json:"supervisors"`
-	Agents      []User     `json:"agents"`
+
+func (ts *TenantSettingConfig) Scan(value interface{}) error {
+	if value == nil {
+		*ts = nil
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(bytes, ts)
 }
 
 func (Tenant) TableName() string {

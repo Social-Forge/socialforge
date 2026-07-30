@@ -1,5 +1,6 @@
 BEGIN;
 
 DROP FUNCTION IF EXISTS update_modified_column();
+DROP EXTENSION IF EXISTS pg_trgm;
 
 COMMIT;

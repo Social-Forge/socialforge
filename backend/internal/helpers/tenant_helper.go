@@ -228,12 +228,12 @@ func (h *TenantHelper) getTenantByID(ctx context.Context, tenantID uuid.UUID) (*
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
-	userTenant, err := h.userRepo.GetUserTenantWithDetailsByTenantID(subCtx, tenantID)
+	tenant, err := h.tenantRepo.FindByID(subCtx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	return &userTenant.Tenant, nil
+	return tenant, nil
 }
 func (h *TenantHelper) setCacheTenant(ctx context.Context, userID uuid.UUID, tenant *entity.Tenant) error {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)

@@ -32,7 +32,6 @@ func NewRateLimiterMiddleware(
 func (rm *RateLimiterMiddleware) ProgressDelay(key string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx := rm.ctxinjext.From(c)
-		defer func() { rm.ctxinjext.LogDuration(ctx, c.Path()) }()
 
 		attemptsKey := fmt.Sprintf("delay:%s:%s", key, c.Locals("real_ip").(string))
 
@@ -51,7 +50,6 @@ func (rm *RateLimiterMiddleware) ProgressDelay(key string) fiber.Handler {
 }
 func (rm *RateLimiterMiddleware) ResetLimitCounters(c fiber.Ctx) {
 	ctx := rm.ctxinjext.From(c)
-	defer func() { rm.ctxinjext.LogDuration(ctx, c.Path()) }()
 
 	ctx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()

@@ -206,12 +206,51 @@ func (r *tenantRepository) FindBySlug(ctx context.Context, slug string) (*entity
 	return &tenant, nil
 }
 func (r *tenantRepository) FindByOwnerID(ctx context.Context, ownerID uuid.UUID) ([]*entity.Tenant, error) {
-	return []*entity.Tenant{}, fmt.Errorf("owner-based tenant lookup is not supported by the current schema")
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `
+        SELECT t.* 
+        FROM tenants t
+        JOIN user_tenants ut ON t.id = ut.tenant_id
+        JOIN users u ON ut.user_id = u.id
+        WHERE u.id = $1 
+          AND ut.role_id = (SELECT id FROM roles WHERE slug = 'tenant_owner')
+          AND ut.deleted_at IS NULL
+          AND t.deleted_at IS NULL
+    `
+
+	var tenants []*entity.Tenant
+	err := pgxscan.Select(subCtx, r.db, &tenants, query, ownerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return []*entity.Tenant{}, nil
+		}
+		return nil, fmt.Errorf("failed to find tenants by owner: %w", err)
+	}
+	return tenants, nil
 }
 func (r *tenantRepository) FindByUserTenantID(ctx context.Context, userTenantID uuid.UUID) (*entity.Tenant, error) {
-	return nil, fmt.Errorf("user-tenant lookup is not supported by the current schema")
-}
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
 
+	query := `
+        SELECT t.*
+        FROM tenants t
+        JOIN user_tenants ut ON t.id = ut.tenant_id
+        WHERE ut.id = $1 AND ut.deleted_at IS NULL AND t.deleted_at IS NULL
+    `
+
+	var tenant entity.Tenant
+	err := pgxscan.Get(subCtx, r.db, &tenant, query, userTenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("tenant not found for user_tenant_id: %s", userTenantID)
+		}
+		return nil, fmt.Errorf("failed to find tenant by user_tenant_id: %w", err)
+	}
+	return &tenant, nil
+}
 func (r *tenantRepository) Search(ctx context.Context, opts *ListOptions) ([]*entity.Tenant, int64, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()

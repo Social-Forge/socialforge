@@ -7,16 +7,16 @@ import (
 )
 
 const (
-	RoleLevelTenantOwner = 0
-	RoleLevelSupervisor  = 1
-	RoleLevelAgent       = 2
-	RoleLevelSuperAdmin  = 3
+	RoleLevelSuperAdmin  = 0
+	RoleLevelTenantOwner = 1
+	RoleLevelSupervisor  = 2
+	RoleLevelAgent       = 3
 )
 const (
+	RoleSuperAdmin  = "superadmin"
 	RoleTenantOwner = "tenant_owner"
 	RoleSupervisor  = "supervisor"
 	RoleAgent       = "agent"
-	RoleSuperAdmin  = "superadmin"
 )
 
 type Role struct {
@@ -24,7 +24,7 @@ type Role struct {
 	Name        string     `json:"name" db:"name" validate:"required,max=50"`
 	Slug        string     `json:"slug" db:"slug" validate:"required,max=50"`
 	Description NullString `json:"description,omitempty" db:"description"`
-	Level       int        `json:"level" db:"level" validate:"required,min=0,max=3"`
+	Level       int        `json:"level" db:"level" validate:"min=0,max=3"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 }

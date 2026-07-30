@@ -8,4 +8,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 COMMIT;

@@ -21,6 +21,10 @@ type BaseRepository interface {
 	CommitTx(ctx context.Context, tx pgx.Tx) error
 	RollbackTx(ctx context.Context, tx pgx.Tx) error
 	WithTransaction(ctx context.Context, fn func(tx pgx.Tx) error) error
+	// RunInTenantTx opens a transaction bound to the tenant id carried in ctx
+	// (via repository.WithTenantID), applies the RLS session variable, and runs
+	// fn with a context that carries the transaction so nested repo calls compose.
+	RunInTenantTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 type baseRepository struct {
 	db *pgxpool.Pool
@@ -33,6 +37,65 @@ func NewBaseRepository(db *pgxpool.Pool) BaseRepository {
 }
 func (r *baseRepository) GetDB() *pgxpool.Pool {
 	return r.db
+}
+
+// q returns the ambient transaction when one is present in ctx (see
+// RunInTenantTx), otherwise the connection pool. Tenant-scoped repositories
+// MUST use r.q(ctx) instead of r.db directly so their queries run inside the
+// RLS-bound transaction when the caller opened one.
+func (r *baseRepository) q(ctx context.Context) Querier {
+	if tx, ok := txFromContext(ctx); ok {
+		return tx
+	}
+	return r.db
+}
+
+// RunInTenantTx opens a transaction, binds the tenant id from ctx to the RLS
+// session variable, and runs fn against a context carrying that transaction.
+// If the caller is already inside a tenant transaction, fn is reused directly
+// so operations compose into one atomic, single-tenant transaction.
+func (r *baseRepository) RunInTenantTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if _, ok := txFromContext(ctx); ok {
+		return fn(ctx)
+	}
+
+	tenantID, ok := TenantIDFromContext(ctx)
+	if !ok {
+		return ErrNoTenantContext
+	}
+
+	tx, err := r.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin tenant transaction: %w", err)
+	}
+
+	var completed bool
+	defer func() {
+		if p := recover(); p != nil {
+			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+				config.Logger.Error("rollback failed after panic", zap.Error(rbErr))
+			}
+			panic(p)
+		} else if !completed {
+			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+				config.Logger.Error("rollback failed", zap.Error(rbErr))
+			}
+		}
+	}()
+
+	if err := applyTenantGUC(ctx, tx, tenantID); err != nil {
+		return err
+	}
+
+	if err := fn(withTx(ctx, tx)); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit failed: %w", err)
+	}
+	completed = true
+	return nil
 }
 func (r *baseRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return r.db.BeginTx(ctx, pgx.TxOptions{
@@ -168,11 +231,11 @@ func (qb *QueryBuilder) Build() (string, []interface{}) {
 	}
 
 	if qb.Limit > 0 {
-		query += " LIMIT " + string(rune(qb.Limit))
+		query += fmt.Sprintf(" LIMIT %d", qb.Limit)
 	}
 
 	if qb.Offset > 0 {
-		query += " OFFSET " + string(rune(qb.Offset))
+		query += fmt.Sprintf(" OFFSET %d", qb.Offset)
 	}
 
 	return query, qb.Args
@@ -293,4 +356,46 @@ func IsValidColumnName(name string) bool {
 	}
 
 	return !blockedKeywords[strings.ToLower(name)]
+}
+
+func (f *Filter) SetExtra(key string, value interface{}) *Filter {
+	if f.Extra == nil {
+		f.Extra = make(map[string]interface{})
+	}
+	f.Extra[key] = value
+	return f
+}
+
+func (f *Filter) GetExtra(key string) interface{} {
+	if f.Extra == nil {
+		return nil
+	}
+	return f.Extra[key]
+}
+
+func (f *Filter) GetExtraString(key string) string {
+	if val := f.GetExtra(key); val != nil {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func (f *Filter) GetExtraUUID(key string) uuid.UUID {
+	if val := f.GetExtra(key); val != nil {
+		if id, ok := val.(uuid.UUID); ok {
+			return id
+		}
+	}
+	return uuid.Nil
+}
+
+func (f *Filter) GetExtraBool(key string) bool {
+	if val := f.GetExtra(key); val != nil {
+		if b, ok := val.(bool); ok {
+			return b
+		}
+	}
+	return false
 }

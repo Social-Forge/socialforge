@@ -14,7 +14,7 @@ ALTER TABLE IF EXISTS payment_events FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON subscriptions USING (tenant_id = current_setting('app.current_tenant', true)::uuid) WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
-CREATE POLICY tenant_isolation ON subssubscription_addonscriptions USING (tenant_id = current_setting('app.current_tenant', true)::uuid) WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+CREATE POLICY tenant_isolation ON subscription_addons USING (tenant_id = current_setting('app.current_tenant', true)::uuid) WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 CREATE POLICY tenant_isolation ON invoices USING (tenant_id = current_setting('app.current_tenant', true)::uuid) WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 

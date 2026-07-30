@@ -20,14 +20,14 @@ import (
 )
 
 type UserService struct {
-	userRepo       repository.UserRepository
-	roleRepo       repository.RoleRepository
-	tenantRepo     repository.TenantRepository
-	divisiRepo     repository.DivisionRepository
-	userHelper     *helpers.UserHelper
-	tokenHelper    *helpers.TokenHelper
-	logger         *zap.Logger
-	minio          *minioclient.MinioClient
+	userRepo    repository.UserRepository
+	roleRepo    repository.RoleRepository
+	tenantRepo  repository.TenantRepository
+	divisiRepo  repository.DivisionRepository
+	userHelper  *helpers.UserHelper
+	tokenHelper *helpers.TokenHelper
+	logger      *zap.Logger
+	minio       *minioclient.MinioClient
 }
 
 func NewUserService(
@@ -41,14 +41,14 @@ func NewUserService(
 	minio *minioclient.MinioClient,
 ) *UserService {
 	return &UserService{
-		userRepo:       userRepo,
-		roleRepo:       roleRepo,
-		tenantRepo:     tenantRepo,
-		divisiRepo:     divisiRepo,
-		userHelper:     userHelper,
-		tokenHelper:    tokenHelper,
-		logger:         logger,
-		minio:          minio,
+		userRepo:    userRepo,
+		roleRepo:    roleRepo,
+		tenantRepo:  tenantRepo,
+		divisiRepo:  divisiRepo,
+		userHelper:  userHelper,
+		tokenHelper: tokenHelper,
+		logger:      logger,
+		minio:       minio,
 	}
 }
 func (s *UserService) GetUserByID(ctx context.Context, userID string) (*entity.UserResponse, error) {
@@ -63,7 +63,7 @@ func (s *UserService) GetUserByID(ctx context.Context, userID string) (*entity.U
 	userTenant, err := s.userRepo.GetUserTenantWithDetailsByUserID(subCtx, userIDUUID)
 	if err != nil {
 		s.logger.Error("Failed to get user tenant",
-			zap.String("user_id", userTenant.UserTenant.UserID.String()), // ✅ Log user ID yang benar
+			zap.String("user_id", userIDUUID.String()),
 			zap.String("expected_user_id", userIDUUID.String()),
 			zap.Error(err),
 		)
@@ -265,12 +265,11 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, req *dto
 		ID:              user.ID,
 		FullName:        req.FullName,
 		Email:           req.Email,
-		Username:        req.Username,
 		Phone:           entity.NewNullString(req.Phone),
 		AvatarURL:       entity.NewNullString(user.AvatarURL.String),
-		IsActive:        user.IsActive,
-		IsVerified:      user.IsVerified,
+		Status:          user.Status,
 		EmailVerifiedAt: user.EmailVerifiedAt,
+		LastLoginAt:     user.LastLoginAt,
 	}
 	userUpdate, err := s.userRepo.Update(subCtx, payload)
 	if err != nil {

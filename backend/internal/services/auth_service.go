@@ -17,6 +17,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/markbates/goth"
 	"go.uber.org/zap"
 )
@@ -83,7 +84,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 		return nil, errors.New("too many attempts. please try again later")
 	}
 
-	user, err := s.userRepo.FindByEmailOrUsername(subCtx, req.Identifier)
+	user, err := s.userRepo.FindByEmail(subCtx, req.Email)
 
 	if err != nil {
 		attemptsKey := fmt.Sprintf("delay:%s:%s", "login", ip)
@@ -114,7 +115,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 
 	if !user.CanLogin() {
 		s.logger.Warn("Login failed: user inactive",
-			zap.String("identifier", req.Identifier),
+			zap.String("email", req.Email),
 			zap.Any("user_id", user.ID),
 		)
 		return nil, dto.ErrUserInactive
@@ -144,7 +145,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 			Token:     tokenVerify,
 			Type:      dto.EmailVerification,
 			To:        user.Email,
-			User:      &entity.UserResponse{ID: user.ID, Email: user.Email, Username: user.Username, FullName: user.FullName},
+			User:      &entity.User{ID: user.ID, Email: user.Email, FullName: user.FullName, Phone: user.Phone},
 			Password:  req.Password,
 			ExpiredAt: expiredAt,
 		}
@@ -206,7 +207,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 		return nil, fmt.Errorf("role not found for user %s", user.ID)
 	}
 
-	roleNames, permsName, permissionResources, actionName := s.GetUserRolePermissions(subCtx, userTenant)
+	roleNames := s.GetUserRoleNames(userTenant)
 
 	var accTokenExp time.Duration
 	var refreshTokenExp time.Duration
@@ -219,19 +220,16 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 	}
 
 	tokenPayload := &entity.RedisSessionData{
-		UserID:             user.ID,
-		Email:              user.Email,
-		TenantID:           userTenant.Tenant.ID,
-		UserTenantID:       userTenant.UserTenant.ID,
-		RoleID:             userTenant.Role.ID,
-		RoleName:           roleNames,
-		PermissionName:     permsName,
-		PermissionResource: permissionResources,
-		PermissionAction:   actionName,
-		SessionID:          uuid.New().String(),
-		Metadata:           userTenant.Metadata,
-		IssuedAt:           time.Now().Unix(),
-		LastAccessed:       time.Now().Unix(),
+		UserID:       user.ID,
+		Email:        user.Email,
+		TenantID:     userTenant.Tenant.ID,
+		UserTenantID: userTenant.UserTenant.ID,
+		RoleID:       userTenant.Role.ID,
+		RoleName:     roleNames,
+		SessionID:    uuid.New().String(),
+		Metadata:     userTenant.Metadata,
+		IssuedAt:     time.Now().Unix(),
+		LastAccessed: time.Now().Unix(),
 	}
 
 	accessToken, err := utils.GenerateJWT(s.jwtSecret, tokenPayload, accTokenExp)
@@ -285,22 +283,14 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 		User: &entity.UserResponse{
 			ID:              user.ID,
 			Email:           user.Email,
-			Username:        user.Username,
 			FullName:        user.FullName,
 			Phone:           user.Phone.String,
 			AvatarURL:       user.AvatarURL.String,
 			TwoFaSecret:     user.TwoFaSecret.String,
-			IsVerified:      user.IsVerified,
-			IsActive:        user.IsActive,
 			EmailVerifiedAt: user.EmailVerifiedAt,
 			LastLoginAt:     user.LastLoginAt,
 			CreatedAt:       user.CreatedAt,
 			UpdatedAt:       user.UpdatedAt,
-			Tenant:          &userTenant.Tenant,
-			UserTenant:      &userTenant.UserTenant,
-			Role:            &userTenant.Role,
-			RolePermissions: userTenant.RolePermissions,
-			Metadata:        userTenant.Metadata,
 		},
 	}, nil
 }
@@ -312,14 +302,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterUserRequest
 		)
 		return nil, dto.ErrEmailAlreadyExists
 	}
-	exists, err := s.userRepo.ExistsByUsername(ctx, req.Username)
-	if err == nil && exists {
-		s.logger.Warn("Registration failed: username already registered",
-			zap.String("username", req.Username),
-		)
-		return nil, dto.ErrUsernameAlreadyExists
-	}
-	exists, err = s.userRepo.ExistsByPhone(ctx, req.Phone)
+	exists, err := s.userRepo.ExistsByPhone(ctx, req.Phone)
 	if err == nil && exists {
 		s.logger.Warn("Registration failed: phone already registered",
 			zap.String("phone", req.Phone),
@@ -344,7 +327,6 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterUserRequest
 
 	userUUID := uuid.New()
 	tenantUUID := uuid.New()
-	fullName := fmt.Sprintf("%s %s", req.FirstName, req.LastName)
 
 	role, err := s.roleRepo.GetByName(ctx, "tenant_owner")
 	if err != nil {
@@ -357,8 +339,8 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterUserRequest
 
 	tenant := &entity.Tenant{
 		ID:                 tenantUUID,
-		Name:               fullName,
-		Slug:               utils.GenerateSlugUnicodeV2(fullName),
+		Name:               req.FullName,
+		Slug:               utils.GenerateSlugUnicodeV2(req.FullName),
 		MaxDivisions:       1,
 		MaxAgents:          1,
 		MaxQuickReplies:    5,
@@ -377,35 +359,44 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterUserRequest
 		Settings:           &entity.TenantSettingConfig{},
 		CreatedAt:          time.Now(),
 	}
-	if err = s.tenantRepo.Create(ctx, tenant); err != nil {
-		s.logger.Error("Failed to create tenant",
-			zap.Any("tenant_id", tenant.ID),
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("failed to create tenant: %w", err)
-	}
-
 	user := &entity.User{
 		ID:              userUUID,
-		TenantID:        tenantUUID,
-		RoleID:          role.ID,
 		Email:           req.Email,
-		Username:        req.Username,
-		FullName:        fullName,
+		FullName:        req.FullName,
 		Phone:           entity.NewNullString(req.Phone),
 		PasswordHash:    hashPassword,
 		Status:          entity.UserStatusActive,
-		IsActive:        true,
-		IsVerified:      false,
 		EmailVerifiedAt: entity.NullTime{},
+		LastLoginAt:     entity.NewNullTime(time.Now()),
 		CreatedAt:       time.Now(),
 	}
-	if err = s.userRepo.Create(ctx, user); err != nil {
-		s.logger.Error("Failed to create user",
+
+	// Create tenant, user and the owner membership atomically so a user always
+	// has a valid tenant membership (the identity chain login depends on).
+	if err = s.userRepo.WithTransaction(ctx, func(tx pgx.Tx) error {
+		if err := s.tenantRepo.CreateTx(ctx, tx, tenant); err != nil {
+			return fmt.Errorf("failed to create tenant: %w", err)
+		}
+		if err := s.userRepo.CreateTx(ctx, tx, user); err != nil {
+			return fmt.Errorf("failed to create user: %w", err)
+		}
+		membership := &entity.UserTenant{
+			UserID:   user.ID,
+			TenantID: tenant.ID,
+			RoleID:   role.ID,
+			IsActive: true,
+		}
+		if err := s.userRepo.CreateUserTenantTx(ctx, tx, membership); err != nil {
+			return fmt.Errorf("failed to create user membership: %w", err)
+		}
+		return nil
+	}); err != nil {
+		s.logger.Error("Failed to register user",
 			zap.Any("user_id", user.ID),
+			zap.Any("tenant_id", tenant.ID),
 			zap.Error(err),
 		)
-		return nil, fmt.Errorf("failed to create user: %w", err)
+		return nil, err
 	}
 
 	tokenVerify, expiredAt := utils.GenerateEmailToken()
@@ -432,7 +423,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterUserRequest
 		Token:     tokenVerify,
 		Type:      dto.EmailVerification,
 		To:        req.Email,
-		User:      &entity.UserResponse{ID: userUUID, Email: req.Email, Username: req.Username, FullName: fullName},
+		User:      &entity.User{ID: userUUID, Email: req.Email, FullName: req.FullName, Phone: entity.NewNullString(req.Phone)},
 		Password:  req.Password,
 		ExpiredAt: expiredAt,
 	}
@@ -442,7 +433,6 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterUserRequest
 			zap.String("email", req.Email),
 			zap.Error(err),
 		)
-		// return nil, fmt.Errorf("failed to send verification email: %w", err)
 	}
 	if s.searchIndex != nil {
 		if err := s.searchIndex.UpsertTenant(ctx, tenant); err != nil {
@@ -482,7 +472,7 @@ func (s *AuthService) OAuthLoginOrRegister(ctx context.Context, gothUser *goth.U
 					s.logger.Warn("Failed to verify oauth user email", zap.Error(err))
 				} else {
 					now := time.Now()
-					user.IsVerified = true
+					user.Status = entity.UserStatusActive
 					user.EmailVerifiedAt = entity.NewNullTimePtr(&now)
 				}
 			}
@@ -503,22 +493,6 @@ func (s *AuthService) OAuthLoginOrRegister(ctx context.Context, gothUser *goth.U
 		}
 		if displayName == "" {
 			displayName = providerName
-		}
-
-		usernameBase := strings.ToLower(strings.Split(strings.TrimSpace(gothUser.Email), "@")[0])
-		if usernameBase == "" {
-			usernameBase = strings.ToLower(strings.ReplaceAll(displayName, " ", ""))
-		}
-		username := usernameBase
-		for i := 0; i < 5; i++ {
-			exists, err := s.userRepo.ExistsByUsername(subCtx, username)
-			if err != nil {
-				return nil, fmt.Errorf("failed to validate username: %w", err)
-			}
-			if !exists {
-				break
-			}
-			username = fmt.Sprintf("%s-%s", usernameBase, uuid.NewString()[:8])
 		}
 
 		role, err := s.roleRepo.GetByName(subCtx, "tenant_owner")
@@ -563,18 +537,14 @@ func (s *AuthService) OAuthLoginOrRegister(ctx context.Context, gothUser *goth.U
 		now := time.Now()
 		user = &entity.User{
 			ID:              uuid.New(),
-			TenantID:        tenant.ID,
-			RoleID:          role.ID,
 			Email:           gothUser.Email,
-			Username:        username,
 			FullName:        displayName,
 			Phone:           entity.NullString{},
 			AvatarURL:       entity.NewNullString(gothUser.AvatarURL),
 			PasswordHash:    hashPassword,
 			Status:          entity.UserStatusActive,
-			IsActive:        true,
-			IsVerified:      true,
 			EmailVerifiedAt: entity.NewNullTimePtr(&now),
+			LastLoginAt:     entity.NewNullTimePtr(&now),
 			CreatedAt:       now,
 		}
 		if err := s.userRepo.Create(subCtx, user); err != nil {
@@ -597,8 +567,8 @@ func (s *AuthService) OAuthLoginOrRegister(ctx context.Context, gothUser *goth.U
 	}
 
 	if s.searchIndex != nil {
-		if tenant, err := s.tenantRepo.FindByID(subCtx, user.TenantID); err == nil && tenant != nil {
-			if err := s.searchIndex.UpsertTenant(subCtx, tenant); err != nil {
+		if details, err := s.userRepo.GetUserTenantWithDetailsByUserID(subCtx, user.ID); err == nil && details != nil {
+			if err := s.searchIndex.UpsertTenant(subCtx, &details.Tenant); err != nil {
 				s.logger.Warn("Failed to sync oauth tenant to typesense", zap.Error(err))
 			}
 		}
@@ -616,7 +586,7 @@ func (s *AuthService) buildOAuthLoginResponse(ctx context.Context, user *entity.
 		return nil, fmt.Errorf("failed to load oauth user tenant: %w", err)
 	}
 
-	roleNames, permsName, permissionResources, actionName := s.GetUserRolePermissions(ctx, userTenant)
+	roleNames := s.GetUserRoleNames(userTenant)
 
 	var accTokenExp time.Duration
 	var refreshTokenExp time.Duration
@@ -629,19 +599,16 @@ func (s *AuthService) buildOAuthLoginResponse(ctx context.Context, user *entity.
 	}
 
 	tokenPayload := &entity.RedisSessionData{
-		UserID:             user.ID,
-		Email:              user.Email,
-		TenantID:           userTenant.Tenant.ID,
-		UserTenantID:       userTenant.UserTenant.ID,
-		RoleID:             userTenant.Role.ID,
-		RoleName:           roleNames,
-		PermissionName:     permsName,
-		PermissionResource: permissionResources,
-		PermissionAction:   actionName,
-		SessionID:          uuid.New().String(),
-		Metadata:           userTenant.Metadata,
-		IssuedAt:           time.Now().Unix(),
-		LastAccessed:       time.Now().Unix(),
+		UserID:       user.ID,
+		Email:        user.Email,
+		TenantID:     userTenant.Tenant.ID,
+		UserTenantID: userTenant.UserTenant.ID,
+		RoleID:       userTenant.Role.ID,
+		RoleName:     roleNames,
+		SessionID:    uuid.New().String(),
+		Metadata:     userTenant.Metadata,
+		IssuedAt:     time.Now().Unix(),
+		LastAccessed: time.Now().Unix(),
 	}
 
 	accessToken, err := utils.GenerateJWT(s.jwtSecret, tokenPayload, accTokenExp)
@@ -665,28 +632,7 @@ func (s *AuthService) buildOAuthLoginResponse(ctx context.Context, user *entity.
 		ExpiresIn:        int64(accTokenExp.Seconds()),
 		ExpiresRefreshIn: int64(refreshTokenExp.Seconds()),
 		Status:           "accepted",
-		User: &entity.UserResponse{
-			ID:              user.ID,
-			TenantID:        user.TenantID,
-			RoleID:          user.RoleID,
-			Email:           user.Email,
-			Username:        user.Username,
-			FullName:        user.FullName,
-			Phone:           user.Phone.String,
-			AvatarURL:       user.AvatarURL.String,
-			TwoFaSecret:     user.TwoFaSecret.String,
-			IsVerified:      user.IsVerified,
-			IsActive:        user.IsActive,
-			EmailVerifiedAt: user.EmailVerifiedAt,
-			LastLoginAt:     user.LastLoginAt,
-			CreatedAt:       user.CreatedAt,
-			UpdatedAt:       user.UpdatedAt,
-			Tenant:          &userTenant.Tenant,
-			UserTenant:      &userTenant.UserTenant,
-			Role:            &userTenant.Role,
-			RolePermissions: userTenant.RolePermissions,
-			Metadata:        userTenant.Metadata,
-		},
+		User:             entity.NewUserResponse(user, &userTenant.Tenant, &userTenant.UserTenant, &userTenant.Role),
 	}, nil
 }
 func (s *AuthService) FindOrCreateUser(ctx context.Context, user *goth.User) (*entity.User, error) {
@@ -727,7 +673,7 @@ func (s *AuthService) VerifyEmail(ctx context.Context, tokenString string) error
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
-	if user.IsVerified {
+	if user.Status == entity.UserStatusActive {
 		return errors.New("email already verified")
 	}
 
@@ -769,8 +715,8 @@ func (s *AuthService) ForgotPassword(ctx context.Context, req *dto.ForgotPasswor
 		remaining := 3 - attempts
 		return fmt.Errorf("failed to get user: %w. %d attempts remaining", err, remaining)
 	}
-	if !user.IsVerified {
-		return errors.New("email not verified")
+	if user.Status != entity.UserStatusActive {
+		return errors.New("user is inactive")
 	}
 
 	tokenVerify, expiredAt := utils.GenerateEmailToken()
@@ -796,7 +742,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, req *dto.ForgotPasswor
 		Token:     newToken.Token,
 		Type:      dto.ResetPassword,
 		To:        req.Email,
-		User:      &entity.UserResponse{ID: user.ID, Email: req.Email, Username: user.Username, FullName: user.FullName},
+		User:      &entity.User{ID: user.ID, Email: req.Email, FullName: user.FullName, Phone: user.Phone},
 		ExpiredAt: newToken.ExpiresAt,
 	}
 
@@ -889,11 +835,11 @@ func (s *AuthService) VerifyTwoFactor(ctx context.Context, req *dto.VerifyTwoFac
 		return nil, fmt.Errorf("role not found for user %s", userTenant.User.ID)
 	}
 
-	if !userTenant.User.IsActive {
+	if !userTenant.User.IsActive() {
 		return nil, errors.New("user is inactive")
 	}
 
-	if userTenant.User.TwoFaSecret.String == "" {
+	if !userTenant.User.TwoFaSecret.Valid || userTenant.User.TwoFaSecret.String == "" {
 		return nil, errors.New("two factor authentication not enabled")
 	}
 
@@ -922,7 +868,7 @@ func (s *AuthService) VerifyTwoFactor(ctx context.Context, req *dto.VerifyTwoFac
 		)
 	}
 
-	roleNames, permsName, permissionResources, actionName := s.GetUserRolePermissions(subCtx, userTenant)
+	roleNames := s.GetUserRoleNames(userTenant)
 
 	var accTokenExp time.Duration
 	var refreshTokenExp time.Duration
@@ -935,19 +881,15 @@ func (s *AuthService) VerifyTwoFactor(ctx context.Context, req *dto.VerifyTwoFac
 	}
 
 	tokenPayload := &entity.RedisSessionData{
-		UserID:             userTenant.User.ID,
-		Email:              userTenant.User.Email,
-		TenantID:           userTenant.Tenant.ID,
-		UserTenantID:       userTenant.UserTenant.ID,
-		RoleID:             userTenant.Role.ID,
-		RoleName:           roleNames,
-		PermissionName:     permsName,
-		PermissionResource: permissionResources,
-		PermissionAction:   actionName,
-		SessionID:          uuid.New().String(),
-		Metadata:           userTenant.Metadata,
-		IssuedAt:           time.Now().Unix(),
-		LastAccessed:       time.Now().Unix(),
+		UserID:       userTenant.User.ID,
+		Email:        userTenant.User.Email,
+		TenantID:     userTenant.Tenant.ID,
+		UserTenantID: userTenant.UserTenant.ID,
+		RoleID:       userTenant.Role.ID,
+		RoleName:     roleNames,
+		SessionID:    uuid.New().String(),
+		IssuedAt:     time.Now().Unix(),
+		LastAccessed: time.Now().Unix(),
 	}
 
 	accessToken, err := utils.GenerateJWT(s.jwtSecret, tokenPayload, accTokenExp)
@@ -998,26 +940,7 @@ func (s *AuthService) VerifyTwoFactor(ctx context.Context, req *dto.VerifyTwoFac
 		ExpiresIn:        int64(accTokenExp.Seconds()),
 		ExpiresRefreshIn: int64(refreshTokenExp.Seconds()),
 		Status:           "accepted",
-		User: &entity.UserResponse{
-			ID:              tokenPayload.UserID,
-			Email:           tokenPayload.Email,
-			Username:        userTenant.User.Username,
-			FullName:        userTenant.User.FullName,
-			Phone:           userTenant.User.Phone.String,
-			AvatarURL:       userTenant.User.AvatarURL.String,
-			TwoFaSecret:     userTenant.User.TwoFaSecret.String,
-			IsVerified:      userTenant.User.IsVerified,
-			IsActive:        userTenant.User.IsActive,
-			EmailVerifiedAt: userTenant.User.EmailVerifiedAt,
-			LastLoginAt:     userTenant.User.LastLoginAt,
-			CreatedAt:       userTenant.User.CreatedAt,
-			UpdatedAt:       userTenant.User.UpdatedAt,
-			Tenant:          &userTenant.Tenant,
-			UserTenant:      &userTenant.UserTenant,
-			Role:            &userTenant.Role,
-			RolePermissions: userTenant.RolePermissions,
-			Metadata:        userTenant.Metadata,
-		},
+		User:             entity.NewUserResponse(&userTenant.User, &userTenant.Tenant, &userTenant.UserTenant, &userTenant.Role),
 	}, nil
 }
 
@@ -1068,11 +991,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken, platform s
 		return nil, fmt.Errorf("role not found for user %s", userTenant.User.ID)
 	}
 
-	if !userTenant.User.IsActive {
+	if !userTenant.User.IsActive() {
 		return nil, errors.New("user is inactive")
 	}
 
-	roleNames, permsName, permissionResources, actionName := s.GetUserRolePermissions(subCtx, userTenant)
+	roleNames := s.GetUserRoleNames(userTenant)
 
 	var accTokenExp time.Duration
 	var refreshTokenExp time.Duration
@@ -1085,19 +1008,16 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken, platform s
 	}
 
 	tokenPayload := &entity.RedisSessionData{
-		UserID:             userTenant.User.ID,
-		Email:              userTenant.User.Email,
-		TenantID:           userTenant.Tenant.ID,
-		UserTenantID:       userTenant.UserTenant.ID,
-		RoleID:             userTenant.Role.ID,
-		RoleName:           roleNames,
-		PermissionName:     permsName,
-		PermissionResource: permissionResources,
-		PermissionAction:   actionName,
-		SessionID:          claims.SessionID,
-		Metadata:           userTenant.Metadata,
-		IssuedAt:           time.Now().Unix(),
-		LastAccessed:       time.Now().Unix(),
+		UserID:       userTenant.User.ID,
+		Email:        userTenant.User.Email,
+		TenantID:     userTenant.Tenant.ID,
+		UserTenantID: userTenant.UserTenant.ID,
+		RoleID:       userTenant.Role.ID,
+		RoleName:     roleNames,
+		SessionID:    claims.SessionID,
+		Metadata:     userTenant.Metadata,
+		IssuedAt:     time.Now().Unix(),
+		LastAccessed: time.Now().Unix(),
 	}
 
 	accessToken, err := utils.GenerateJWT(s.jwtSecret, tokenPayload, accTokenExp)
@@ -1134,22 +1054,14 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken, platform s
 		User: &entity.UserResponse{
 			ID:              userTenant.User.ID,
 			Email:           userTenant.User.Email,
-			Username:        userTenant.User.Username,
 			FullName:        userTenant.User.FullName,
 			Phone:           userTenant.User.Phone.String,
 			AvatarURL:       userTenant.User.AvatarURL.String,
 			TwoFaSecret:     userTenant.User.TwoFaSecret.String,
-			IsVerified:      userTenant.User.IsVerified,
-			IsActive:        userTenant.User.IsActive,
 			EmailVerifiedAt: userTenant.User.EmailVerifiedAt,
 			LastLoginAt:     userTenant.User.LastLoginAt,
 			CreatedAt:       userTenant.User.CreatedAt,
 			UpdatedAt:       userTenant.User.UpdatedAt,
-			Tenant:          &userTenant.Tenant,
-			UserTenant:      &userTenant.UserTenant,
-			Role:            &userTenant.Role,
-			RolePermissions: userTenant.RolePermissions,
-			Metadata:        userTenant.Metadata,
 		},
 	}, nil
 }
@@ -1213,23 +1125,12 @@ func (s *AuthService) SaveSession(ctx context.Context, accToken, refToken string
 	}
 	return nil
 }
-func (s *AuthService) GetUserRolePermissions(ctx context.Context, metaData *entity.UserTenantWithDetails) ([]string, []string, []string, []string) {
-	roleNames := []string{metaData.Role.Name}
-	if metaData.Role.Slug != "" && metaData.Role.Slug != metaData.Role.Name {
-		roleNames = append(roleNames, metaData.Role.Slug)
-	}
 
-	permissionNames := make([]string, 0, len(metaData.RolePermissions))
-	permissionResources := make([]string, 0, len(metaData.RolePermissions))
-	permissionActions := make([]string, 0, len(metaData.RolePermissions))
-
-	for _, roleID := range metaData.RolePermissions {
-		permissionNames = append(permissionNames, roleID.PermissionName)
-		permissionResources = append(permissionResources, roleID.PermissionResource)
-		permissionActions = append(permissionActions, roleID.PermissionAction)
-	}
-	return roleNames, permissionNames, permissionResources, permissionActions
-
+// GetUserRoleNames returns the role identifiers (name, plus slug when it
+// differs) used for level/name-based authorization. Permissions were removed
+// in favour of role level/name, so no permission lists are produced.
+func (s *AuthService) GetUserRoleNames(metaData *entity.UserTenantWithDetails) []string {
+	return metaData.RoleNames()
 }
 func (s *AuthService) IsBlockedAttempt(ctx context.Context, key string) bool {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 3*time.Second)

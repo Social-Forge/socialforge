@@ -5,6 +5,7 @@ import (
 	"github/socialforge/internal/entity"
 	"github/socialforge/internal/helpers"
 	"github/socialforge/internal/infra/contextpool"
+	"github/socialforge/internal/infra/repository"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -30,7 +31,6 @@ func NewTenantMiddleware(notifier config.Notifier, ctxinject *ContextMiddleware,
 func (m *TenantMiddleware) TenantGuard() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx := m.ctxinject.From(c)
-		defer m.ctxinject.LogDuration(ctx, c.Path())()
 
 		subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 		defer cancel()
@@ -65,6 +65,11 @@ func (m *TenantMiddleware) TenantGuard() fiber.Handler {
 			m.logger.Error("Tenant subscription has expired")
 			return helpers.Respond(c, fiber.StatusForbidden, "Tenant subscription has expired", nil)
 		}
+
+		// Propagate the tenant id into the request context so that
+		// tenant-scoped repositories can bind Postgres RLS
+		// (set_config('app.current_tenant', ...)) via RunInTenantTx.
+		c.Locals(ctxKey, repository.WithTenantID(ctx, tenantUUID))
 		return c.Next()
 	}
 }

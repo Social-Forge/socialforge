@@ -39,16 +39,19 @@ func (s *SearchIndexService) Bootstrap(ctx context.Context) error {
 			Name: CollectionUsers,
 			Fields: []api.Field{
 				{Name: "id", Type: "string"},
-				{Name: "tenant_id", Type: "string", Facet: boolPtr(true)},
-				{Name: "role_id", Type: "string", Facet: boolPtr(true)},
 				{Name: "email", Type: "string"},
-				{Name: "username", Type: "string"},
 				{Name: "full_name", Type: "string"},
 				{Name: "phone", Type: "string"},
 				{Name: "avatar_url", Type: "string"},
 				{Name: "status", Type: "string", Facet: boolPtr(true)},
 				{Name: "is_active", Type: "bool", Facet: boolPtr(true)},
 				{Name: "is_verified", Type: "bool", Facet: boolPtr(true)},
+				{Name: "tenant_id", Type: "string", Facet: boolPtr(true)},
+				{Name: "role_id", Type: "string", Facet: boolPtr(true)},
+				{Name: "tenant_names", Type: "string[]", Facet: boolPtr(true)},
+				{Name: "division_names", Type: "string[]", Facet: boolPtr(true)},
+				{Name: "email_verified_at", Type: "int64", Facet: boolPtr(true)},
+				{Name: "last_login_at", Type: "int64", Facet: boolPtr(true)},
 				{Name: "created_at", Type: "int64", Sort: boolPtr(true)},
 				{Name: "updated_at", Type: "int64", Sort: boolPtr(true)},
 			},
@@ -60,10 +63,20 @@ func (s *SearchIndexService) Bootstrap(ctx context.Context) error {
 				{Name: "id", Type: "string"},
 				{Name: "name", Type: "string"},
 				{Name: "slug", Type: "string"},
+				{Name: "max_divisions", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_agents", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_quick_replies", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_waha_whatsapp", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_meta_whatsapp", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_meta_messenger", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_instagram", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_telegram", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_webchat", Type: "int64", Facet: boolPtr(true)},
+				{Name: "max_linkchat", Type: "int64", Facet: boolPtr(true)},
+				{Name: "ai_credits", Type: "int64", Sort: boolPtr(true)},
 				{Name: "subscription_plan", Type: "string", Facet: boolPtr(true)},
 				{Name: "subscription_status", Type: "string", Facet: boolPtr(true)},
 				{Name: "is_active", Type: "bool", Facet: boolPtr(true)},
-				{Name: "ai_credits", Type: "int64", Sort: boolPtr(true)},
 				{Name: "created_at", Type: "int64", Sort: boolPtr(true)},
 				{Name: "updated_at", Type: "int64", Sort: boolPtr(true)},
 			},
@@ -76,6 +89,7 @@ func (s *SearchIndexService) Bootstrap(ctx context.Context) error {
 				{Name: "tenant_id", Type: "string", Facet: boolPtr(true)},
 				{Name: "name", Type: "string"},
 				{Name: "slug", Type: "string"},
+				{Name: "description", Type: "string"},
 				{Name: "routing_type", Type: "string", Facet: boolPtr(true)},
 				{Name: "is_active", Type: "bool", Facet: boolPtr(true)},
 				{Name: "link_url", Type: "string"},
@@ -100,25 +114,60 @@ func (s *SearchIndexService) UpsertUser(ctx context.Context, user *entity.User) 
 		return nil
 	}
 
+	var tenantNames []string
+	var divisionNames []string
+	var tenantID string
+	var roleID string
+
+	if len(user.UserTenants) > 0 {
+		for _, ut := range user.UserTenants {
+			if ut.IsActive && ut.Tenant != nil {
+				tenantNames = append(tenantNames, ut.Tenant.Name)
+				if tenantID == "" {
+					tenantID = ut.TenantID.String()
+				}
+			}
+
+			if ut.Role != nil && roleID == "" {
+				roleID = ut.RoleID.String()
+			}
+
+			if len(ut.DivisionMembers) > 0 {
+				for _, dm := range ut.DivisionMembers {
+					if dm.Division != nil {
+						divisionNames = append(divisionNames, dm.Division.Name)
+					}
+				}
+			}
+		}
+	}
+
+	if tenantID == "" && len(user.UserTenants) > 0 {
+		tenantID = user.UserTenants[0].TenantID.String()
+		if user.UserTenants[0].Tenant != nil {
+			tenantNames = append(tenantNames, user.UserTenants[0].Tenant.Name)
+		}
+	}
+
 	doc := userSearchDocument{
-		ID:         user.ID.String(),
-		TenantID:   user.TenantID.String(),
-		RoleID:     user.RoleID.String(),
-		Email:      user.Email,
-		Username:   user.Username,
-		FullName:   user.FullName,
-		Phone:      user.Phone.String,
-		AvatarURL:  user.AvatarURL.String,
-		Status:     user.Status,
-		IsActive:   user.IsActive,
-		IsVerified: user.IsVerified,
-		CreatedAt:  user.CreatedAt.Unix(),
-		UpdatedAt:  user.UpdatedAt.Unix(),
+		ID:            user.ID.String(),
+		TenantID:      tenantID,
+		RoleID:        roleID,
+		Email:         user.Email,
+		FullName:      user.FullName,
+		Phone:         user.Phone.String,
+		AvatarURL:     user.AvatarURL.String,
+		Status:        user.Status,
+		IsActive:      user.Status == entity.StatusActive,
+		IsVerified:    user.EmailVerifiedAt.Valid,
+		TenantNames:   tenantNames,
+		DivisionNames: divisionNames,
+		CreatedAt:     user.CreatedAt.Unix(),
+		UpdatedAt:     user.UpdatedAt.Unix(),
 	}
 
 	return s.upsert(ctx, CollectionUsers, doc)
 }
-
 func (s *SearchIndexService) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return s.deleteByID(ctx, CollectionUsers, id.String())
 }
@@ -208,21 +257,21 @@ func (s *SearchIndexService) deleteByID(ctx context.Context, collection, id stri
 }
 
 type userSearchDocument struct {
-	ID         string `json:"id"`
-	TenantID   string `json:"tenant_id"`
-	RoleID     string `json:"role_id"`
-	Email      string `json:"email"`
-	Username   string `json:"username"`
-	FullName   string `json:"full_name"`
-	Phone      string `json:"phone,omitempty"`
-	AvatarURL  string `json:"avatar_url,omitempty"`
-	Status     string `json:"status"`
-	IsActive   bool   `json:"is_active"`
-	IsVerified bool   `json:"is_verified"`
-	CreatedAt  int64  `json:"created_at"`
-	UpdatedAt  int64  `json:"updated_at"`
+	ID            string   `json:"id"`
+	TenantID      string   `json:"tenant_id"`
+	RoleID        string   `json:"role_id"`
+	Email         string   `json:"email"`
+	FullName      string   `json:"full_name"`
+	Phone         string   `json:"phone,omitempty"`
+	AvatarURL     string   `json:"avatar_url,omitempty"`
+	Status        string   `json:"status"`
+	IsActive      bool     `json:"is_active"`
+	IsVerified    bool     `json:"is_verified"`
+	TenantNames   []string `json:"tenant_names,omitempty"`
+	DivisionNames []string `json:"division_names,omitempty"`
+	CreatedAt     int64    `json:"created_at"`
+	UpdatedAt     int64    `json:"updated_at"`
 }
-
 type tenantSearchDocument struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`

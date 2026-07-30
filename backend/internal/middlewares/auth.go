@@ -50,7 +50,6 @@ func NewAuthMiddleware(notifier config.Notifier, ctxinject *ContextMiddleware, r
 func (m *AuthMiddleware) JWTAuth() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx := m.ctxinject.From(c)
-		defer m.ctxinject.LogDuration(ctx, c.Path())()
 
 		tokenStr, err := m.extractTokenFromHeader(c)
 		if err != nil {
@@ -307,15 +306,6 @@ func (m *AuthMiddleware) setContextLocals(c fiber.Ctx, metadata *entity.RedisSes
 
 	if len(metadata.RoleName) > 0 {
 		c.Locals("role_name", metadata.RoleName)
-	}
-	if len(metadata.PermissionResource) > 0 {
-		c.Locals("permission_resources", metadata.PermissionResource)
-	}
-	if len(metadata.PermissionName) > 0 {
-		c.Locals("permissions", metadata.PermissionName)
-	}
-	if len(metadata.PermissionAction) > 0 {
-		c.Locals("permission_actions", metadata.PermissionAction)
 	}
 }
 func (am *AuthMiddleware) LogUnauthorized(c fiber.Ctx, subject string, requestID string) {

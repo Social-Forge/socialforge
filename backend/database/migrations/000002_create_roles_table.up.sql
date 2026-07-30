@@ -23,7 +23,7 @@ CREATE INDEX IF NOT EXISTS idx_roles_level ON roles(level);
 
 -- Add comments
 COMMENT ON TABLE roles IS 'User roles in the system';
-COMMENT ON COLUMN roles.level IS '0=tenant_owner, 1=supervisor, 2=agent, 3=superadmin';
+COMMENT ON COLUMN roles.level IS '0=superadmin, 1=tenant_owner, 2=supervisor, 3=agent';
 
 CREATE OR REPLACE FUNCTION update_roles_modtime()
 RETURNS TRIGGER AS $$

@@ -40,15 +40,15 @@ func (h *AuthHelper) SendEmail(payload *dto.SendMailMetaData) error {
 }
 
 func (h *AuthHelper) SendVerificationEmail(payload *dto.SendMailMetaData) error {
-	url := fmt.Sprintf("https://%s/auth/confirm?token=%s", h.appConfig.ClientOrigin, payload.Token)
+	url := fmt.Sprintf("https://%s/confirm?token=%s", h.appConfig.ClientOrigin, payload.Token)
 
 	data := struct {
 		VerificationURL string
-		Username        string
+		FullName        string
 		Year            int
 	}{
 		VerificationURL: url,
-		Username:        payload.User.Username,
+		FullName:        payload.User.FullName,
 		Year:            2025,
 	}
 
@@ -62,15 +62,15 @@ func (h *AuthHelper) SendVerificationEmail(payload *dto.SendMailMetaData) error 
 }
 
 func (h *AuthHelper) SendResetPasswordEmail(payload *dto.SendMailMetaData) error {
-	url := fmt.Sprintf("https://%s/auth/reset?token=%s", h.appConfig.ClientOrigin, payload.Token)
+	url := fmt.Sprintf("https://%s/reset-password?token=%s", h.appConfig.ClientOrigin, payload.Token)
 
 	data := struct {
 		ResetURL string
-		Username string
+		FullName string
 		Year     int
 	}{
 		ResetURL: url,
-		Username: payload.User.Username,
+		FullName: payload.User.FullName,
 		Year:     2025,
 	}
 
@@ -87,14 +87,14 @@ func (h *AuthHelper) SendRegistrationInfo(payload *dto.SendMailMetaData) error {
 	data := struct {
 		Email    string
 		Password string
-		Username string
+		FullName string
 		LoginURL string
 		Year     int
 	}{
 		Email:    payload.To,
 		Password: payload.Password,
-		Username: payload.User.Username,
-		LoginURL: fmt.Sprintf("https://%s/auth/sign-in", h.appConfig.ClientOrigin),
+		FullName: payload.User.FullName,
+		LoginURL: fmt.Sprintf("https://%s/signin", h.appConfig.ClientOrigin),
 		Year:     2025,
 	}
 
@@ -197,7 +197,7 @@ const emailVerificationTemplate = `
                     <tr>
                         <td style="padding: 40px;">
                             <p style="margin: 0 0 20px; color: #4a5568; font-size: 16px; line-height: 1.6;">
-                                Hi <strong>{{.Username}}</strong>,
+                                Hi <strong>{{.FullName}}</strong>,
                             </p>
                             <p style="margin: 0 0 30px; color: #4a5568; font-size: 16px; line-height: 1.6;">
                                 Thank you for signing up! To complete your registration and start using your account, please verify your email address by clicking the button below.
@@ -271,7 +271,7 @@ const resetPasswordTemplate = `
                     <tr>
                         <td style="padding: 40px;">
                             <p style="margin: 0 0 20px; color: #4a5568; font-size: 16px; line-height: 1.6;">
-                                Hi <strong>{{.Username}}</strong>,
+                                Hi <strong>{{.FullName}}</strong>,
                             </p>
                             <p style="margin: 0 0 30px; color: #4a5568; font-size: 16px; line-height: 1.6;">
                                 We received a request to reset your password. Click the button below to create a new password for your account.
@@ -352,7 +352,7 @@ const registrationInfoTemplate = `
                     <tr>
                         <td style="padding: 40px;">
                             <p style="margin: 0 0 20px; color: #4a5568; font-size: 16px; line-height: 1.6;">
-                                Hi <strong>{{.Username}}</strong>,
+                                Hi <strong>{{.FullName}}</strong>,
                             </p>
                             <p style="margin: 0 0 30px; color: #4a5568; font-size: 16px; line-height: 1.6;">
                                 Welcome to <strong>AGC Forge</strong>! Your account has been successfully created. Below are your login credentials:

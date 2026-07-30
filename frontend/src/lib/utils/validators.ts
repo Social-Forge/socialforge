@@ -58,95 +58,169 @@ const fileSchema = z.instanceof(File).superRefine(async (file, ctx) => {
 
 export const loginSchema = z.object({
 	email: z.string().email('Invalid email').min(1),
-	password: z.string().min(1)
+	password: z
+		.string({ error: 'Password is required' })
+		.min(1, { message: 'Password is required' })
+		.min(6, { message: 'Password must be at least 6 characters long' })
+		.transform((value) => value.replaceAll(/\s+/g, '')),
+	remember_me: z.boolean().optional().default(false)
 });
 export const registerSchema = z
 	.object({
-		name: z.string().min(1),
-		email: z.string().email('Invalid email').min(1),
-		subdomain: z
+		full_name: z
+			.string({ error: 'First name is required' })
+			.min(3, 'First name must be at least 3 characters long')
+			.nonempty('First name is required'),
+		email: z
+			.string({ error: 'Email is required' })
+			.email('Email is not valid')
+			.nonempty('Email is required'),
+		phone: z
 			.string()
-			.trim()
-			.toLowerCase()
-			.min(3, 'Subdomain must be at least 3 characters')
-			.max(63, 'Subdomain must be at most 63 characters')
-			.regex(TENANT_SUBDOMAIN_PATTERN, 'Subdomain can only contain letters, numbers, and hyphens')
-			.refine((value) => !RESERVED_TENANT_SUBDOMAINS.has(value), {
-				message: 'Subdomain is reserved'
-			}),
-		password: z.string().min(1),
-		confirmPassword: z.string().min(1)
+			.regex(
+				/^\+\d{1,4}[\d\s-]{6,15}$/,
+				'Phone must start with country code (e.g., +1) and contain only numbers, spaces, or dashes'
+			)
+			.transform((val) => (val ? val.replace(/[\s-]/g, '') : ''))
+			.refine((val) => !val || /^\+\d{1,4}\d{4,13}$/.test(val), {
+				message: 'Phone must start with country code and contain only numbers after cleaning'
+			})
+			.refine((val) => !val || val.length >= 8, {
+				message: 'Phone must be at least 8 characters long'
+			})
+			.refine((val) => !val || val.length <= 16, {
+				message: 'Phone must be at most 16 characters long'
+			})
+			.optional()
+			.or(z.literal('')),
+
+		password: z
+			.string({ error: 'Password is required' })
+			.min(1, { message: 'Password is required' })
+			.min(6, { message: 'Password must be at least 6 characters long' })
+			.regex(/[A-Z]/, {
+				message: 'Password must contain at least one uppercase letter'
+			})
+			.regex(/[0-9]/, { message: 'Password must contain at least one number' })
+			.transform((value) => value.replaceAll(/\s+/g, '')),
+
+		confirm_password: z
+			.string({ error: 'Confirm password is required' })
+			.nonempty({ message: 'Confirm password is required' })
+			.transform((value) => value.replaceAll(/\s+/g, ''))
 	})
-	.refine((data) => data.password === data.confirmPassword, {
-		message: 'Passwords do not match',
-		path: ['confirmPassword']
+	.superRefine((data, ctx) => {
+		if (data.password !== data.confirm_password) {
+			ctx.addIssue({
+				path: ['confirm_password'],
+				code: z.ZodIssueCode.custom,
+				message: 'Password and confirm password must be the same'
+			});
+		}
 	});
 export const forgotPasswordSchema = z.object({
 	email: z.string().email('Invalid email').min(1)
 });
 export const resetPasswordSchema = z
 	.object({
-		token: z.string().min(1),
-		password: z.string().min(1),
-		confirmPassword: z.string().min(1)
+		new_password: z
+			.string()
+			.min(6, 'Password must be at least 6 characters')
+			.transform((value) => value.replaceAll(/\s+/g, '')),
+		confirm_password: z
+			.string()
+			.nonempty('Confirm password is required')
+			.transform((value) => value.replaceAll(/\s+/g, '')),
+		token: z.string().nonempty('Token is required')
 	})
-	.refine((data) => data.password === data.confirmPassword, {
-		message: 'Passwords do not match',
-		path: ['confirmPassword']
+	.superRefine((data, ctx) => {
+		if (data.new_password != data.confirm_password) {
+			ctx.addIssue({
+				path: ['confirm_password'],
+				code: z.ZodIssueCode.custom,
+				message: 'Password and confirm password must be the same'
+			});
+		}
 	});
+export const verifyTwoFactorSchema = z.object({
+	token: z.string().nonempty('Two factor authentication token is required'),
+	otp: z.string().nonempty('One time password is required')
+});
+export const updateProfileSchema = z.object({
+	full_name: z
+		.string({ error: 'Full name is required' })
+		.min(3, 'Full name must be at least 3 characters long')
+		.nonempty('Full name is required'),
+	email: z
+		.string({ error: 'Email is required' })
+		.email('Email is not valid')
+		.nonempty('Email is required'),
+	username: z
+		.string({ error: 'Username is required' })
+		.min(3, 'Username must be at least 3 characters long')
+		.regex(/^[a-z0-9]+$/, 'Username must be lowercase letters and numbers only, without spaces')
+		.nonempty('Username is required'),
+	phone: z
+		.string()
+		.regex(
+			/^\+\d{1,4}[\d\s-]{6,15}$/,
+			'Phone must start with country code (e.g., +1) and contain only numbers, spaces, or dashes'
+		)
+		.transform((val) => (val ? val.replace(/[\s-]/g, '') : ''))
+		.refine((val) => !val || /^\+\d{1,4}\d{4,13}$/.test(val), {
+			message: 'Phone must start with country code and contain only numbers after cleaning'
+		})
+		.refine((val) => !val || val.length >= 8, {
+			message: 'Phone must be at least 8 characters long'
+		})
+		.refine((val) => !val || val.length <= 16, {
+			message: 'Phone must be at most 16 characters long'
+		})
+		.optional()
+		.or(z.literal(''))
+});
+export const updateTenantSchema = z.object({
+	id: z.string().nonempty('Tenant ID is required'),
+	name: z
+		.string({ error: 'Name is required' })
+		.min(3, 'Name must be at least 3 characters long')
+		.nonempty('Name is required'),
+	slug: z
+		.string({ error: 'Slug is required' })
+		.min(3, 'Slug must be at least 3 characters long')
+		.nonempty('Slug is required'),
+	subdomain: z.string().nullable().optional(),
+	description: z.string().nullable().optional()
+});
+export const updatePasswordSchema = z.object({
+	current_password: z
+		.string({ error: 'Current password is required' })
+		.min(1, { message: 'Current password is required' })
+		.min(6, { message: 'Current password must be at least 6 characters long' })
+		.transform((value) => value.replaceAll(/\s+/g, '')),
+	new_password: z
+		.string({ error: 'New password is required' })
+		.min(6, { message: 'New password must be at least 6 characters long' })
+		.transform((value) => value.replaceAll(/\s+/g, '')),
+	confirm_password: z
+		.string({ error: 'Confirm password is required' })
+		.nonempty({ message: 'Confirm password is required' })
+		.transform((value) => value.replaceAll(/\s+/g, ''))
+});
+export const activatedTwoFactorSchema = z.object({
+	code: z
+		.string()
+		.min(6, 'Two factor authentication code must be at least 6 characters long')
+		.max(6, 'Two factor authentication code must be at most 6 characters long')
+		.nonempty('Two factor authentication code is required')
+});
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type VerifyTwoFactorInput = z.infer<typeof verifyTwoFactorSchema>;
+export type ActivatedTwoFactorInput = z.infer<typeof activatedTwoFactorSchema>;
 
-export const platformSettingsSchema = z.object({
-	publisher_share_percent: z.coerce.number().min(0).max(100),
-	referral_percent: z.coerce.number().min(0).max(50),
-	min_payout_usd: z.coerce.number().min(1).max(1000),
-	default_countdown_sec: z.coerce.number().int().min(0).max(120),
-	guest_links_per_hour: z.coerce.number().int().min(1).max(100),
-	enable_register: z.boolean().default(true),
-	default_placements: z
-		.array(
-			z.enum([
-				'popunder',
-				'banner_header',
-				'banner_footer',
-				'banner_sidebar',
-				'native_in_content',
-				'smartlink_button',
-				'social_bar'
-			])
-		)
-		.max(7)
-});
-export const updatePasswordSchema = z
-	.object({
-		currentPassword: z
-			.string({ error: 'Current password is required' })
-			.min(1, { message: 'Current password is required' })
-			.min(6, { message: 'Current password must be at least 6 characters long' })
-			.transform((value) => value.replaceAll(/\s+/g, '')),
-		newPassword: z
-			.string({ error: 'New password is required' })
-			.min(6, { message: 'New password must be at least 6 characters long' })
-			.transform((value) => value.replaceAll(/\s+/g, '')),
-		confirmPassword: z
-			.string({ error: 'Confirm password is required' })
-			.nonempty({ message: 'Confirm password is required' })
-			.transform((value) => value.replaceAll(/\s+/g, ''))
-	})
-	.refine((data) => data.newPassword === data.confirmPassword, {
-		message: 'Passwords do not match',
-		path: ['confirmPassword']
-	});
-export const updateProfileSchema = z.object({
-	name: z.string().min(1),
-	email: z.string().email('Invalid email').min(1)
-});
-
-export type PlatformSettingsInput = z.infer<typeof platformSettingsSchema>;
-export type Placement = PlatformSettingsInput['default_placements'][number];
 export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

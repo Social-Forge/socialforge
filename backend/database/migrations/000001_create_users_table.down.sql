@@ -6,8 +6,6 @@ DROP FUNCTION IF EXISTS update_users_modtime();
 
 DROP INDEX IF EXISTS idx_users_email;
 DROP INDEX IF EXISTS idx_users_status;
-DROP INDEX IF EXISTS idx_users_tenant_id;
-DROP INDEX IF EXISTS idx_users_role_id;
 DROP INDEX IF EXISTS idx_users_created_at;
 DROP INDEX IF EXISTS idx_users_updated_at;
 DROP INDEX IF EXISTS idx_users_deleted_at;

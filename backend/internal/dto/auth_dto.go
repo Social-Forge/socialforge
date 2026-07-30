@@ -37,7 +37,7 @@ type JWTClaims struct {
 }
 
 type LoginRequest struct {
-	Identifier string `json:"identifier" validate:"required,min=3"`
+	Email      string `json:"email" validate:"required,email"`
 	Password   string `json:"password" validate:"required,min=6"`
 	RememberMe bool   `json:"remember_me" validate:"omitempty"`
 }
@@ -52,9 +52,7 @@ type LoginResponse struct {
 	Status           string               `json:"status"`
 }
 type RegisterUserRequest struct {
-	FirstName       string `json:"first_name" validate:"required,min=2"`
-	LastName        string `json:"last_name" validate:"required,min=2"`
-	Username        string `json:"username" validate:"required,min=2"`
+	FullName        string `json:"full_name"`
 	Email           string `json:"email" validate:"required,email"`
 	Phone           string `json:"phone,omitempty" validate:"omitempty,e164"`
 	Password        string `json:"password" validate:"required,min=8"`
@@ -81,12 +79,12 @@ type VerifyTwoFactorRequest struct {
 }
 
 type SendMailMetaData struct {
-	Token     string               `json:"token"`
-	Type      TypeVerify           `json:"type"`
-	To        string               `json:"to"`
-	User      *entity.UserResponse `json:"user,omitempty"`
-	Password  string               `json:"password,omitempty"`
-	ExpiredAt time.Time            `json:"expired_at"`
+	Token     string       `json:"token"`
+	Type      TypeVerify   `json:"type"`
+	To        string       `json:"to"`
+	User      *entity.User `json:"user,omitempty"`
+	Password  string       `json:"password,omitempty"`
+	ExpiredAt time.Time    `json:"expired_at"`
 }
 
 func (m *SendMailMetaData) GetURL(origin string) string {

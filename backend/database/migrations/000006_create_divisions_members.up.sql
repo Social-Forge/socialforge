@@ -1,18 +1,18 @@
-CREATE TABLE IF NOT EXISTS divisions_members (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT chk_tenant_member_tenant_id_user_id UNIQUE (tenant_id, user_id),
-  CONSTRAINT chk_tenant_member_user_id CHECK (user_id <> tenant_id)
+CREATE TABLE IF NOT EXISTS division_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_tenant_id UUID NOT NULL REFERENCES user_tenants(id) ON DELETE CASCADE,
+    division_id UUID NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
+    is_active BOOLEAN DEFAULT TRUE,
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ,
+    CONSTRAINT division_members_unique UNIQUE (user_tenant_id, division_id)
 );
+CREATE INDEX idx_division_members_user_tenant ON division_members(user_tenant_id);
+CREATE INDEX idx_division_members_division ON division_members(division_id);
 
-CREATE INDEX IF NOT EXISTS idx_divisions_members_tenant_id_user_id ON divisions_members(tenant_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_divisions_members_created_at ON divisions_members(created_at);
-CREATE INDEX IF NOT EXISTS idx_divisions_members_updated_at ON divisions_members(updated_at);
-
-CREATE OR REPLACE FUNCTION update_divisions_members_modtime()
+CREATE OR REPLACE FUNCTION update_division_members_modtime()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -20,7 +20,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER update_divisions_members_modtime
-BEFORE UPDATE ON divisions_members
+CREATE TRIGGER update_division_members_modtime
+BEFORE UPDATE ON division_members
 FOR EACH ROW
-EXECUTE FUNCTION update_divisions_members_modtime();
+EXECUTE FUNCTION update_division_members_modtime();

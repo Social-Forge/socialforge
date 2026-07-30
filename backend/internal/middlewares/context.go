@@ -78,7 +78,6 @@ func (cm *ContextMiddleware) HandlerContext(c fiber.Ctx) context.Context {
 	if !ok || ctx == nil {
 		return context.Background()
 	}
-	defer cm.LogDuration(ctx, c.Path())()
 
 	return ctx
 }

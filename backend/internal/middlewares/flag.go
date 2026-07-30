@@ -23,7 +23,6 @@ func NewRequireFlagsMiddleware(ctxinject *ContextMiddleware, userHelper *helpers
 func (m *RequireFlagsMiddleware) RequireConfirmedPassword() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx := m.ctxinject.From(c)
-		defer m.ctxinject.LogDuration(ctx, c.Path())()
 
 		userID, ok := c.Locals("user_id").(string)
 		if !ok || userID == "" {
@@ -50,7 +49,6 @@ func (m *RequireFlagsMiddleware) RequireConfirmedPassword() fiber.Handler {
 func (m *RequireFlagsMiddleware) RequireTwoFactor() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx := m.ctxinject.From(c)
-		defer m.ctxinject.LogDuration(ctx, c.Path())()
 
 		sessionID := c.Cookies("2fa_session_id") // Ambil 2FA session ID dari cookie
 		if sessionID == "" {
