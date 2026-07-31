@@ -60,6 +60,7 @@ func setupMiddlewares(app *fiber.App, cont *dependencies.Container) {
 		c.Locals("real_ip", ip)
 		return c.Next()
 	})
+
 	app.Use(
 		middleware.ContextMiddleware.TimeoutContext(60*time.Second),
 		middleware.Recovery.NewRecoveryMiddleware(),

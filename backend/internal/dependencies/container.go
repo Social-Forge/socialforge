@@ -11,6 +11,7 @@ import (
 	"github/socialforge/internal/infra/metrics"
 	minioclient "github/socialforge/internal/infra/minio-client"
 	"github/socialforge/internal/infra/oauth"
+	"github/socialforge/internal/infra/rabbitmq"
 	redisclient "github/socialforge/internal/infra/redis-client"
 	"github/socialforge/internal/infra/repository"
 	typesenseclient "github/socialforge/internal/infra/typesense-client"
@@ -29,6 +30,7 @@ type Container struct {
 	RedisMetrics     *metrics.RedisMetrics
 	RedisClient      *redisclient.RedisClient
 	CentrifugoClient *centrifugo.CentrifugoClient
+	RabbitMQ         *rabbitmq.Client
 	TypesenseClient  *typesenseclient.TypesenseClient
 	SearchIndex      *typesenseclient.SearchIndexService
 	MinioClient      *minioclient.MinioClient
@@ -41,6 +43,12 @@ type Container struct {
 	TokenRepo        repository.TokenRepository
 	TenantRepo       repository.TenantRepository
 	DivisionRepo     repository.DivisionRepository
+	ChannelRepo      repository.ChannelRepository
+	ContactRepo      repository.ContactRepository
+	ConversationRepo repository.ConversationRepository
+	MessageRepo      repository.MessageRepository
+	MessageOutboxRepo repository.MessageOutboxRepository
+	WebhookEventRepo repository.WebhookEventRepository
 	UserHelper       *helpers.UserHelper
 	TokenHelper      *helpers.TokenHelper
 	TenantHelper     *helpers.TenantHelper
@@ -78,6 +86,11 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		return nil, fmt.Errorf("failed to create centrifugo client: %w", err)
 	}
 
+	rabbitmqClient, err := rabbitmq.NewClient(ctx, &init.RabbitMQ, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create rabbitmq client: %w", err)
+	}
+
 	var typesenseClient *typesenseclient.TypesenseClient
 	if strings.TrimSpace(init.TypeSense.ApiKey) != "" {
 		typesenseClient, err = typesenseclient.NewTypesenseClient(ctx, &init.TypeSense, logger)
@@ -113,6 +126,12 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	tokenRepo := repository.NewTokenRepository(dbPool.Pool)
 	tenantRepo := repository.NewTenantRepository(dbPool.Pool)
 	divisionRepo := repository.NewDivisionRepository(dbPool.Pool)
+	channelRepo := repository.NewChannelRepository(dbPool.Pool)
+	contactRepo := repository.NewContactRepository(dbPool.Pool)
+	conversationRepo := repository.NewConversationRepository(dbPool.Pool)
+	messageRepo := repository.NewMessageRepository(dbPool.Pool)
+	messageOutboxRepo := repository.NewMessageOutboxRepository(dbPool.Pool)
+	webhookEventRepo := repository.NewWebhookEventRepository(dbPool.Pool)
 
 	userHelper := helpers.NewUserHelper(redis, userRepo)
 	tokenHelper := helpers.NewTokenHelper(redis)
@@ -138,6 +157,7 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		DBPool:           dbPool,
 		RedisClient:      redis,
 		CentrifugoClient: centrifugoClient,
+		RabbitMQ:         rabbitmqClient,
 		TypesenseClient:  typesenseClient,
 		SearchIndex:      searchIndex,
 		MinioClient:      minio,
@@ -150,6 +170,12 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		TokenRepo:        tokenRepo,
 		TenantRepo:       tenantRepo,
 		DivisionRepo:     divisionRepo,
+		ChannelRepo:      channelRepo,
+		ContactRepo:      contactRepo,
+		ConversationRepo: conversationRepo,
+		MessageRepo:      messageRepo,
+		MessageOutboxRepo: messageOutboxRepo,
+		WebhookEventRepo: webhookEventRepo,
 		UserHelper:       userHelper,
 		TokenHelper:      tokenHelper,
 		TenantHelper:     tenantHelper,
@@ -217,6 +243,14 @@ func (cont *Container) Close() error {
 			errs = append(errs, fmt.Errorf("centrifugo shutdown error: %w", err))
 		} else {
 			cont.Logger.Info("✅ Centrifugo connection closed successfully")
+		}
+	}
+	if cont.RabbitMQ != nil {
+		if err := cont.RabbitMQ.Close(); err != nil {
+			cont.Logger.Error("RabbitMQ shutdown error", zap.Error(err))
+			errs = append(errs, fmt.Errorf("rabbitmq shutdown error: %w", err))
+		} else {
+			cont.Logger.Info("✅ RabbitMQ connection closed successfully")
 		}
 	}
 	if cont.AIClient != nil {

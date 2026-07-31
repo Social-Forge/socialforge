@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/markbates/goth v1.82.0
 	github.com/prometheus/client_golang v1.24.1
+	github.com/rabbitmq/amqp091-go v1.13.0
 )
 
 require (

@@ -35,9 +35,9 @@ export default defineConfig({
 		})
 	],
 	ssr: {
-		noExternal: ['svelte-motion', 'cssstyle']
+		noExternal: ['svelte-motion']
 	},
 	optimizeDeps: {
-		include: ['svelte', 'svelte/internal', 'cssstyle', 'cssstyle/lib/generated/properties.js']
+		include: ['svelte', 'svelte/internal']
 	}
 });

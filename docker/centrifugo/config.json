@@ -19,6 +19,33 @@
       "history_ttl": "24h"
     },
     {
+      "name": "conversation",
+      "presence": true,
+      "join_leave": true,
+      "history_size": 100,
+      "history_ttl": "24h",
+      "allow_subscribe_for_client": true,
+      "force_recovery": true
+    },
+    {
+      "name": "tenant",
+      "history_size": 50,
+      "history_ttl": "12h",
+      "allow_subscribe_for_client": true
+    },
+    {
+      "name": "division",
+      "history_size": 50,
+      "history_ttl": "12h",
+      "allow_subscribe_for_client": true
+    },
+    {
+      "name": "user",
+      "history_size": 50,
+      "history_ttl": "12h",
+      "allow_subscribe_for_client": true
+    },
+    {
       "name": "notifications",
       "history_size": 50,
       "history_ttl": "12h",

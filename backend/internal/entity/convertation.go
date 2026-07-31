@@ -8,6 +8,13 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	ConversationStatusOpen       = "open"
+	ConversationStatusUnassigned = "unassigned"
+	ConversationStatusCompleted  = "completed"
+	ConversationStatusArchived   = "archived"
+)
+
 type Convertation struct {
 	ID                     uuid.UUID      `json:"id" db:"id"`
 	TenantID               uuid.UUID      `json:"tenant_id" db:"tenant_id" validate:"required"`

@@ -8,6 +8,21 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	ChannelTypeWhatsAppWaha = "whatsapp_waha"
+	ChannelTypeWhatsAppMeta = "whatsapp_meta"
+	ChannelTypeMessenger    = "messenger"
+	ChannelTypeInstagram    = "instagram"
+	ChannelTypeTelegram     = "telegram"
+)
+
+const (
+	ChannelStatusDisconnected = "disconnected"
+	ChannelStatusConnected    = "connected"
+	ChannelStatusConnecting   = "connecting"
+	ChannelStatusFailed       = "failed"
+)
+
 type Channel struct {
 	ID              uuid.UUID          `json:"id" db:"id"`
 	TenantID        uuid.UUID          `json:"tenant_id" db:"tenant_id" validate:"required"`

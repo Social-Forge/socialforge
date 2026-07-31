@@ -6,6 +6,31 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	MessageDirectionIn  = "in"
+	MessageDirectionOut = "out"
+
+	SenderTypeContact = "contact"
+	SenderTypeAgent   = "agent"
+	SenderTypeAI      = "ai"
+	SenderTypeSystem  = "system"
+
+	MessageStatusPending   = "pending"
+	MessageStatusSent      = "sent"
+	MessageStatusDelivered = "delivered"
+	MessageStatusRead      = "read"
+	MessageStatusFailed    = "failed"
+
+	ContentTypeText     = "text"
+	ContentTypeImage    = "image"
+	ContentTypeVideo    = "video"
+	ContentTypeAudio    = "audio"
+	ContentTypeDocument = "document"
+	ContentTypeLocation = "location"
+	ContentTypeSticker  = "sticker"
+	ContentTypeTemplate = "template"
+)
+
 type Message struct {
 	ID                uuid.UUID              `json:"id" db:"id"`
 	TenantID          uuid.UUID              `json:"tenant_id" db:"tenant_id" validate:"required"`

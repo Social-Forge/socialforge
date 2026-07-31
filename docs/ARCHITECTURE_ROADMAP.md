@@ -333,12 +333,12 @@ Tiap fase = increment yang **jalan & bisa dites**. Selesai tiap fase → commit 
 - [x] **Quota middleware**: agent quota (max_agents) + division quota (max_divisions) — terverifikasi ("agent quota reached max 1 for plan free").
 - [ ] OAuth end-to-end (butuh kredensial provider) & channel-assign ke division → saat channel dibangun (Fase 2).
 
-### Fase 2 — Channel & Ingestion (WAHA + Telegram dulu)
-- [ ] Unified Message Envelope + normalizer.
-- [ ] Webhook endpoints + signature verify + dedup (`webhook_events`).
-- [ ] WAHA adapter (3 engine, session Postgres, media→MinIO, auto-reject call).
-- [ ] Telegram adapter.
-- [ ] Worker `ingest` + `dispatch` (outbox) + RabbitMQ queues.
+### Fase 2 — Channel & Ingestion (WAHA + Telegram dulu) — **SEDANG DIKERJAKAN**
+- [x] **2A: Channel management vertical** (`/api/channels/protected/*`) — CRUD + quota per-type (map ke tenant.max_*) + validasi division + RLS + webhook_secret/waha_session gen. Terverifikasi live (quota telegram max 1, waha max 0 free).
+- [x] **2B: `webhook_events` migration (dedup) + contacts UNIQUE + contacts RLS** (v38). Entity MessageOutbox/WebhookEvent + 4 RLS-aware repos (Contact FindOrCreate, Conversation FindOrCreateOpen, Message Create-dedup, WebhookEvent TryInsert). Wired di container, build hijau.
+- [x] **2C: Unified Message Envelope + normalizer (Telegram+WAHA) + webhook endpoint + signature verify + dedup + Centrifugo (sync)** — terverifikasi live E2E (kedua provider 200, wrong secret 401, dedup 2 POST→1 msg, contact/conversation/message chain, Centrifugo publish OK setelah fix `/api` + namespaces).
+- [x] **2D: RabbitMQ client + async worker consumers + outbox dispatch** — terverifikasi live (async ingest webhook→queue→worker persist; outbox send loop pending→sent; conversation vertical `/api/conversations/protected/*`). Worker jalan 2 consumer. Provider send masih stub (2E).
+- [ ] 2E: WAHA adapter (3 engine, session, media→MinIO, auto-reject call) + Telegram adapter.
 - [ ] Contact auto-create + label channel.
 
 ### Fase 3 — Conversation & Chat Core

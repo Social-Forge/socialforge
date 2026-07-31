@@ -28,4 +28,13 @@ func RegisterApiRoutes(router fiber.Router, cont *dependencies.Container, mw *fa
 
 	superadminFactory := factory.NewSuperadminFactory(cont, mw)
 	superadminFactory.GetRoutes(router)
+
+	channelFactory := factory.NewChannelFactory(cont, mw)
+	channelFactory.GetRoutes(router)
+
+	webhookFactory := factory.NewWebhookFactory(cont, mw)
+	webhookFactory.GetRoutes(router)
+
+	conversationFactory := factory.NewConversationFactory(cont, mw)
+	conversationFactory.GetRoutes(router)
 }

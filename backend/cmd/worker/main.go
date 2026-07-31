@@ -4,6 +4,8 @@ import (
 	"context"
 	"github/socialforge/config"
 	"github/socialforge/internal/dependencies"
+	"github/socialforge/internal/infra/rabbitmq"
+	"github/socialforge/internal/services"
 	"log"
 	"os"
 	"os/signal"
@@ -33,12 +35,39 @@ func main() {
 	}
 	defer cont.Close()
 
-	cont.Logger.Info("🛠️  Worker started — waiting for jobs")
+	// Inbound ingestion consumer: persists messages + publishes realtime.
+	ingestionService := services.NewIngestionService(
+		cont.ChannelRepo,
+		cont.ContactRepo,
+		cont.ConversationRepo,
+		cont.MessageRepo,
+		cont.WebhookEventRepo,
+		cont.CentrifugoClient,
+		cont.RabbitMQ,
+		cont.Logger,
+	)
+	if cont.RabbitMQ != nil {
+		if err := cont.RabbitMQ.Consume(rabbitmq.QueueIngestInbound, "worker-ingest", 20, ingestionService.ProcessInbound); err != nil {
+			cont.Logger.Fatal("Failed to start ingest consumer", zap.Error(err))
+		}
+	}
 
-	// TODO(Fase 2+): start RabbitMQ consumers here, e.g.
-	//   registerIngestConsumers(ctx, cont)
-	//   registerDispatchConsumers(ctx, cont)
-	//   startCronJobs(ctx, cont) // subscription expiry, etc.
+	// Outbound dispatch consumer (Fase 2E plugs in real provider send).
+	outboundService := services.NewOutboundService(
+		cont.ConversationRepo,
+		cont.MessageRepo,
+		cont.MessageOutboxRepo,
+		cont.CentrifugoClient,
+		cont.RabbitMQ,
+		cont.Logger,
+	)
+	if cont.RabbitMQ != nil {
+		if err := cont.RabbitMQ.Consume(rabbitmq.QueueDispatchOutbound, "worker-dispatch", 20, outboundService.ProcessDispatch); err != nil {
+			cont.Logger.Fatal("Failed to start dispatch consumer", zap.Error(err))
+		}
+	}
+
+	cont.Logger.Info("🛠️  Worker started — consuming jobs")
 
 	<-ctx.Done()
 	stop()

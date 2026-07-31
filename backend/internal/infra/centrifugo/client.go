@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github/socialforge/config"
+	"strings"
 	"sync"
 
 	"github.com/centrifugal/gocent/v3"
@@ -33,7 +34,9 @@ func NewCentrifugoClient(ctx context.Context, cfg *config.CentrifugoConfig, logg
 		}
 
 		client := gocent.New(gocent.Config{
-			Addr: cfg.URL,
+			// gocent expects the full HTTP API endpoint (…/api); CENTRIFUGO_URL
+			// is just the origin, so append the API path.
+			Addr: strings.TrimRight(cfg.URL, "/") + "/api",
 			Key:  cfg.APIKey,
 		})
 
