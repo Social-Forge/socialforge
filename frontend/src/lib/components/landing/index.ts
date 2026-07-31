@@ -5,7 +5,20 @@ import { DEFAULT_AVATAR_URL, PROCESS, FEATURES, REVIEWS, COMPANIES } from './com
 import MaxWidthWrapper from './max-width-wrapper.svelte';
 import HomeAnimationContainer from './animation-container.svelte';
 import HomeMobileNavbar from './mobile-navbar.svelte';
-import HomeNavbar from './home-navbar.svelte';
+import HomeNavbar from './navbar.svelte';
+import HomeHero from './hero.svelte';
+import HomeSponsore from './sponsore.svelte';
+import HomeBenefits from './benefits.svelte';
+import HomeFeatures from './features.svelte';
+import HomeServices from './services.svelte';
+import HowItWorks from './how-it-works.svelte';
+import HomeTestimonials from './testimonials.svelte';
+import HomeTeams from './teams.svelte';
+import HomeCommunity from './community.svelte';
+import HomePricing from './pricing.svelte';
+import HomeContact from './contact.svelte';
+import HomeFaqs from './faqs.svelte';
+import HomeFooter from './footer.svelte';
 
 export {
 	// Constants
@@ -23,5 +36,18 @@ export {
 	MaxWidthWrapper,
 	HomeAnimationContainer,
 	HomeMobileNavbar,
-	HomeNavbar
+	HomeNavbar,
+	HomeHero,
+	HomeSponsore,
+	HomeBenefits,
+	HomeFeatures,
+	HomeServices,
+	HowItWorks,
+	HomeTestimonials,
+	HomeTeams,
+	HomeCommunity,
+	HomePricing,
+	HomeContact,
+	HomeFaqs,
+	HomeFooter
 };

@@ -15,7 +15,10 @@
 </script>
 
 <div
-	class="relative flex min-h-svh flex-col items-center justify-center gap-6 bg-muted bg-linear-to-br from-primary/20 via-primary/10 to-primary/30 p-6 md:p-10"
+	class="min-full absolute inset-0 bg-[linear-gradient(to_right,#e5e5e5_1px,transparent_1px),linear-gradient(to_bottom,#e5e5e5_1px,transparent_1px)] mask-[radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_110%)] bg-size-[3rem_3rem] dark:bg-[linear-gradient(to_right,#171717_1px,transparent_1px),linear-gradient(to_bottom,#171717_1px,transparent_1px)]"
+></div>
+<div
+	class="relative flex min-h-svh flex-col items-center justify-center gap-6 bg-muted p-6 md:p-10"
 >
 	<div class="fixed top-4 right-4 z-10">
 		<div class="flex items-center justify-center gap-2">

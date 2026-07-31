@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { HomeNavbar } from '$lib/components/landing';
+	import { HomeNavbar, HomeFooter } from '$lib/components/landing';
 
 	let { data, children } = $props();
 </script>
@@ -11,3 +11,5 @@
 <main class="relative z-0 mx-auto mt-20 w-full">
 	{@render children()}
 </main>
+
+<HomeFooter />
