@@ -26,6 +26,12 @@ type UserRepository interface {
 	// CreateUserTenant links a user to a tenant with a role (membership row).
 	CreateUserTenant(ctx context.Context, ut *entity.UserTenant) error
 	CreateUserTenantTx(ctx context.Context, tx pgx.Tx, ut *entity.UserTenant) error
+	// Tenant member management (supervisors/agents = user_tenants).
+	ListTenantMembers(ctx context.Context, tenantID uuid.UUID, roleSlug string) ([]*entity.UserTenantWithDetails, error)
+	CountTenantMembersInRoles(ctx context.Context, tenantID uuid.UUID, roleSlugs []string) (int, error)
+	FindUserTenantByID(ctx context.Context, id uuid.UUID) (*entity.UserTenant, error)
+	UpdateUserTenant(ctx context.Context, id, roleID uuid.UUID, isActive bool) error
+	SoftDeleteUserTenant(ctx context.Context, id uuid.UUID) error
 	// Read operations
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	FindByEmail(ctx context.Context, email string) (*entity.User, error)
@@ -274,6 +280,120 @@ func (r *userRepository) insertUserTenant(ctx context.Context, q Querier, ut *en
 		Scan(&ut.ID, &ut.CreatedAt, &ut.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create user tenant: %w", err)
+	}
+	return nil
+}
+
+// ListTenantMembers returns the tenant's memberships (user + role). Pass an
+// empty roleSlug for all roles. Uses users.status (no is_active column).
+func (r *userRepository) ListTenantMembers(ctx context.Context, tenantID uuid.UUID, roleSlug string) ([]*entity.UserTenantWithDetails, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT
+			u.id, u.email, u.full_name, u.phone, u.avatar_url, u.status,
+			u.email_verified_at, u.last_login_at, u.created_at, u.updated_at,
+			ut.id, ut.user_id, ut.tenant_id, ut.role_id, ut.is_active,
+			ut.created_at, ut.updated_at,
+			r.id, r.name, r.slug, r.level
+		FROM user_tenants ut
+		JOIN users u ON u.id = ut.user_id AND u.deleted_at IS NULL
+		JOIN roles r ON r.id = ut.role_id
+		WHERE ut.tenant_id = $1 AND ut.deleted_at IS NULL
+			AND ($2 = '' OR r.slug = $2)
+		ORDER BY r.level ASC, u.full_name ASC`
+
+	rows, err := r.q(subCtx).Query(subCtx, query, tenantID, roleSlug)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tenant members: %w", err)
+	}
+	defer rows.Close()
+
+	members := make([]*entity.UserTenantWithDetails, 0)
+	for rows.Next() {
+		var d entity.UserTenantWithDetails
+		if err := rows.Scan(
+			&d.User.ID, &d.User.Email, &d.User.FullName, &d.User.Phone, &d.User.AvatarURL,
+			&d.User.Status, &d.User.EmailVerifiedAt, &d.User.LastLoginAt,
+			&d.User.CreatedAt, &d.User.UpdatedAt,
+			&d.UserTenant.ID, &d.UserTenant.UserID, &d.UserTenant.TenantID, &d.UserTenant.RoleID,
+			&d.UserTenant.IsActive, &d.UserTenant.CreatedAt, &d.UserTenant.UpdatedAt,
+			&d.Role.ID, &d.Role.Name, &d.Role.Slug, &d.Role.Level,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan tenant member: %w", err)
+		}
+		members = append(members, &d)
+	}
+	return members, rows.Err()
+}
+
+// CountTenantMembersInRoles counts active memberships whose role slug is in the
+// given set (used for plan quota, e.g. agents = supervisor + agent).
+func (r *userRepository) CountTenantMembersInRoles(ctx context.Context, tenantID uuid.UUID, roleSlugs []string) (int, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT COUNT(*)
+		FROM user_tenants ut
+		JOIN roles r ON r.id = ut.role_id
+		WHERE ut.tenant_id = $1 AND ut.deleted_at IS NULL AND ut.is_active = true
+			AND r.slug = ANY($2)`
+
+	var count int
+	if err := r.q(subCtx).QueryRow(subCtx, query, tenantID, roleSlugs).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count tenant members: %w", err)
+	}
+	return count, nil
+}
+
+func (r *userRepository) FindUserTenantByID(ctx context.Context, id uuid.UUID) (*entity.UserTenant, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT id, user_id, tenant_id, role_id, is_active, created_at, updated_at, deleted_at
+		FROM user_tenants WHERE id = $1 AND deleted_at IS NULL`
+
+	var ut entity.UserTenant
+	if err := pgxscan.Get(subCtx, r.q(subCtx), &ut, query, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("membership not found")
+		}
+		return nil, fmt.Errorf("failed to find membership: %w", err)
+	}
+	return &ut, nil
+}
+
+func (r *userRepository) UpdateUserTenant(ctx context.Context, id, roleID uuid.UUID, isActive bool) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `UPDATE user_tenants SET role_id = $1, is_active = $2, updated_at = now()
+		WHERE id = $3 AND deleted_at IS NULL`
+	tag, err := r.q(subCtx).Exec(subCtx, query, roleID, isActive, id)
+	if err != nil {
+		return fmt.Errorf("failed to update membership: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("membership not found")
+	}
+	return nil
+}
+
+func (r *userRepository) SoftDeleteUserTenant(ctx context.Context, id uuid.UUID) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `UPDATE user_tenants SET deleted_at = now(), is_active = false, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`
+	tag, err := r.q(subCtx).Exec(subCtx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to remove membership: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("membership not found")
 	}
 	return nil
 }

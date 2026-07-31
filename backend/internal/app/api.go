@@ -19,4 +19,13 @@ func RegisterApiRoutes(router fiber.Router, cont *dependencies.Container, mw *fa
 
 	tenantFactory := factory.NewTenantFactory(cont, mw)
 	tenantFactory.GetRoutes(router)
+
+	divisionFactory := factory.NewDivisionFactory(cont, mw)
+	divisionFactory.GetRoutes(router)
+
+	memberFactory := factory.NewMemberFactory(cont, mw)
+	memberFactory.GetRoutes(router)
+
+	superadminFactory := factory.NewSuperadminFactory(cont, mw)
+	superadminFactory.GetRoutes(router)
 }

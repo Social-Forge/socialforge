@@ -8,6 +8,24 @@ x-logging: &logging
       max-size: "10m"
       max-file: "3"
 
+# Shared build config for the Go image (server + worker share it, dev target
+# gives air hot-reload). Context is ./backend so the Dockerfile COPY paths match.
+x-backend-build: &backend-build
+  build:
+    context: ./backend
+    dockerfile: ../docker/backend/Dockerfile.backend
+    target: development
+
+# Rewrites the app's localhost-based connection targets to in-network service
+# names. The rest of the config is loaded from .env via env_file.
+x-app-env: &app-env
+  DB_HOST: postgres
+  REDIS_HOST: redis
+  RABBITMQ_HOST: rabbitmq
+  TYPESENSE_HOST: typesense
+  MINIO_ENDPOINT: minio:9000
+  CENTRIFUGO_URL: http://centrifugo:8000
+
 networks:
   social-forge:
     driver: bridge
@@ -21,6 +39,8 @@ volumes:
   prometheus-data:
   grafana-data:
   loki-data:
+  go-mod-cache:
+  web-node-modules:
 
 services:
   postgres:
@@ -378,14 +398,133 @@ services:
     depends_on: [redis]
     networks: [social-forge]
 
-  # nginx:
-  #   profiles: [proxy]
-  #   image: nginx:1.27-alpine
-  #   container_name: socialforge-nginx
-  #   restart: unless-stopped
-  #   depends_on: [app, centrifugo]
-  #   ports: ["80:80", "443:443"]
-  #   volumes:
-  #     - ./deploy/nginx/socialforge.conf:/etc/nginx/conf.d/socialforge.conf:ro
-  #     - /etc/letsencrypt:/etc/letsencrypt:ro
-  #   networks: [social-forge]
+  # ============================================================
+  # APPLICATION SERVICES
+  # ============================================================
+  backend:
+    <<: [*restart, *logging, *backend-build]
+    image: socialforge/backend:dev
+    container_name: socialforge-backend
+    env_file: .env
+    environment:
+      <<: *app-env
+      APP_PORT: "8080"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    volumes:
+      - ./backend:/app
+      - go-mod-cache:/go/pkg/mod
+    networks: [social-forge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      typesense:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      centrifugo:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/health",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  worker:
+    <<: [*restart, *logging, *backend-build]
+    image: socialforge/backend:dev
+    container_name: socialforge-worker
+    command: ["go", "run", "./cmd/worker/main.go"]
+    env_file: .env
+    environment:
+      <<: *app-env
+    volumes:
+      - ./backend:/app
+      - go-mod-cache:/go/pkg/mod
+    networks: [social-forge]
+    depends_on:
+      backend:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  web:
+    image: node:24-alpine
+    container_name: socialforge-web
+    <<: [*restart, *logging]
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5000"
+    env_file: .env
+    environment:
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
+    ports:
+      - "127.0.0.1:${CLIENT_PORT:-5000}:5000"
+    volumes:
+      - ./frontend:/app
+      - web-node-modules:/app/node_modules
+    networks: [social-forge]
+    depends_on:
+      backend:
+        condition: service_started
+
+  # One-shot schema migrations (golang-migrate). Run on demand:
+  #   docker compose --profile tools run --rm migrate up
+  #   docker compose --profile tools run --rm migrate down 1
+  migrate:
+    image: migrate/migrate:latest
+    container_name: socialforge-migrate
+    profiles: [tools]
+    <<: *logging
+    restart: "no"
+    volumes:
+      - ./backend/database/migrations:/migrations:ro
+    entrypoint:
+      [
+        "migrate",
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://${DB_USER:-postgres}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE:-social_forge}?sslmode=${DB_SSL_MODE:-disable}",
+      ]
+    command: ["up"]
+    networks: [social-forge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Dev reverse proxy (single entrypoint). Opt-in:
+  #   docker compose --profile proxy up -d nginx
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: socialforge-nginx
+    profiles: [proxy]
+    <<: [*restart, *logging]
+    ports:
+      - "127.0.0.1:${NGINX_HTTP_PORT:-8081}:80"
+    volumes:
+      - ./docker/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [social-forge]
+    depends_on:
+      backend:
+        condition: service_started
+      web:
+        condition: service_started
+      centrifugo:
+        condition: service_started

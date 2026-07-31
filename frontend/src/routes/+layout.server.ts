@@ -1,13 +1,24 @@
 import type { MetaTag, LinkTag } from 'svelte-meta-tags';
 import { defineBaseMetaTags } from 'svelte-meta-tags';
 import { NODE_ENV } from '$env/static/private';
+import { locales as SUPPORTED_LOCALES } from '$lib/paraglide/runtime';
 
 export const load = async ({ locals, platform, url }) => {
+	const { user, lang } = locals;
 	const defaultOrigin = locals.origin ?? url.origin;
+
 	let canonicalUrl = defaultOrigin;
 	if (NODE_ENV && NODE_ENV === 'production' && canonicalUrl.startsWith('http://')) {
 		canonicalUrl = canonicalUrl.replace('http://', 'https://');
 	}
+	const alternates = SUPPORTED_LOCALES.map((lang) => ({
+		lang,
+		href: `${canonicalUrl}/${lang}`
+	}));
+	const normalizedAlternates = alternates.map((alt) => ({
+		...alt,
+		href: normalizeUrl(alt.href)
+	}));
 
 	const baseTags = defineBaseMetaTags({
 		title: 'Social Forge - Multi-agent Customer Service and Omnichannel CRM',
@@ -140,5 +151,23 @@ export const load = async ({ locals, platform, url }) => {
 		}
 	});
 
-	return { ...baseTags };
+	return {
+		...baseTags,
+		user,
+		lang,
+		canonicalUrl,
+		alternates: normalizedAlternates
+	};
 };
+
+function normalizeUrl(urlString: string): string {
+	try {
+		const url = new URL(urlString);
+		if (NODE_ENV === 'production' && url.protocol === 'http:') {
+			url.protocol = 'https:';
+		}
+		return url.href;
+	} catch {
+		return urlString;
+	}
+}

@@ -1,7 +1,11 @@
 import type { Handle, RequestEvent } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { redirect } from '@sveltejs/kit';
-import { getTextDirection } from '$lib/paraglide/runtime';
+import {
+	getTextDirection,
+	type Locale,
+	locales as SUPPORTED_LOCALES
+} from '$lib/paraglide/runtime';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { ApiHandler } from '$lib/server/api';
 import { ServiceHelper } from '$lib/server/index';
@@ -15,10 +19,14 @@ import {
 	adminApiRoutes,
 	tenantApiRoutes
 } from '$lib/middleware/api';
+import { NODE_ENV } from '$env/static/private';
+
+const LOCALE_COOKIE_NAME = 'PARAGLIDE_LOCALE';
 
 const handleParaglide: Handle = ({ event, resolve }) =>
 	paraglideMiddleware(event.request, ({ request, locale }) => {
 		event.request = request;
+		event.locals.lang = locale;
 
 		return resolve(event, {
 			transformPageChunk: ({ html }) =>
@@ -27,6 +35,88 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 					.replace('%paraglide.dir%', getTextDirection(locale))
 		});
 	});
+const paraglideHandleWithAutoDetectedLocale: Handle = ({ event, resolve }) => {
+	const { request } = event;
+	const pathname = event.url.pathname;
+
+	if (
+		pathname.startsWith('/api') ||
+		pathname.startsWith('/_app') ||
+		pathname === '/health' ||
+		pathname.includes('.')
+	) {
+		return resolve(event);
+	}
+
+	const ua = request.headers.get('user-agent');
+	const isBot = !!ua && /bot|crawl|spider|facebookexternalhit|twitterbot/i.test(ua);
+	const pathLocale = getLocaleFromPath(pathname);
+	const cookieLocale = event.cookies.get(LOCALE_COOKIE_NAME) as Locale | null;
+	let detectedLocale: Locale;
+	if (pathLocale) {
+		detectedLocale = pathLocale;
+	} else if (cookieLocale && SUPPORTED_LOCALES.includes(cookieLocale)) {
+		detectedLocale = cookieLocale;
+	} else {
+		detectedLocale = detectLocaleFromBrowser(event);
+	}
+
+	const resolveWithParaglide = (locale: Locale) => {
+		return paraglideMiddleware(event.request, ({ request: localizedRequest }) => {
+			event.request = localizedRequest;
+			try {
+				(event as any).url = new URL(localizedRequest.url);
+			} catch {
+				try {
+					Object.defineProperty(event, 'url', { value: new URL(localizedRequest.url) });
+				} catch {
+					// ignore
+				}
+			}
+			return resolve(event, {
+				transformPageChunk: ({ html }) =>
+					html
+						.replace('%paraglide.lang%', locale)
+						.replace('%paraglide.dir%', getTextDirection(locale))
+			});
+		});
+	};
+
+	if (request.method !== 'GET' && request.method !== 'HEAD') {
+		event.locals.lang = detectedLocale;
+		setCookie(event, detectedLocale);
+		return resolveWithParaglide(detectedLocale);
+	}
+
+	if (isBot) {
+		event.locals.lang = (pathLocale ?? 'en') as Locale;
+		setCookie(event, event.locals.lang as Locale);
+		return resolveWithParaglide(event.locals.lang as Locale);
+	}
+
+	if (pathname === '/en' || pathname.startsWith('/en/')) {
+		const stripped = pathname === '/en' ? '/' : pathname.slice(3);
+		throw redirect(302, `${stripped}${event.url.search}`);
+	}
+
+	if (!pathLocale) {
+		const cookieLang = event.cookies.get(LOCALE_COOKIE_NAME) as Locale | null;
+		const targetLocale =
+			cookieLang && SUPPORTED_LOCALES.includes(cookieLang) ? cookieLang : detectedLocale;
+
+		event.locals.lang = targetLocale;
+		setCookie(event, targetLocale);
+
+		if (targetLocale !== 'en') {
+			throw redirect(302, `/${targetLocale}${pathname === '/' ? '' : pathname}${event.url.search}`);
+		}
+		return resolveWithParaglide(targetLocale);
+	}
+
+	event.locals.lang = pathLocale;
+	setCookie(event, pathLocale);
+	return resolveWithParaglide(pathLocale);
+};
 
 const initServer: Handle = async ({ event, resolve }) => {
 	event.locals.origin = PUBLIC_API_URL;
@@ -152,8 +242,8 @@ const auth: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 export const handle: Handle = sequence(
-	handleParaglide,
-	initServer
+	paraglideHandleWithAutoDetectedLocale
+	// initServer
 	// auth
 );
 
@@ -221,4 +311,28 @@ async function handleRefreshSession(event: RequestEvent) {
 		console.error('Refresh session error:', error);
 		return null;
 	}
+}
+function hasLocalePrefix(path: string): boolean {
+	return SUPPORTED_LOCALES.some((l) => path === `/${l}` || path.startsWith(`/${l}/`));
+}
+
+function getLocaleFromPath(pathname: string): Locale | null {
+	const match = pathname.match(/^\/(en|id)(\/|$)/);
+	return match ? (match[1] as Locale) : null;
+}
+function detectLocaleFromBrowser(event: RequestEvent): Locale {
+	const accept = event.request.headers.get('accept-language');
+	const l = accept?.split(',')[0].split('-')[0] as Locale;
+	const supported = SUPPORTED_LOCALES.includes(l);
+	return supported ? l : 'en';
+}
+
+function setCookie(event: RequestEvent, locale: Locale) {
+	event.cookies.set('PARAGLIDE_LOCALE', locale, {
+		httpOnly: true,
+		secure: NODE_ENV === 'production',
+		sameSite: 'lax',
+		path: '/',
+		maxAge: 60 * 60 * 24 * 7
+	});
 }

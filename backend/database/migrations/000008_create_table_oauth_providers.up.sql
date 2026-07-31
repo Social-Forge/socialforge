@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS oauth_providers (
   provider_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT chk_oauth_provider_provider_id UNIQUE (provider_id, user_id);
+  CONSTRAINT chk_oauth_provider_provider_id UNIQUE (provider_id, user_id),
   CONSTRAINT chk_oauth_provider_provider_name CHECK (provider_name IN ('google', 'facebook', 'github'))
 );
 

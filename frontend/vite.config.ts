@@ -30,6 +30,7 @@ export default defineConfig({
 		paraglideVitePlugin({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide',
+			strategy: ['url', 'cookie', 'baseLocale'],
 			emitTsDeclarations: true
 		})
 	],
@@ -37,6 +38,6 @@ export default defineConfig({
 		noExternal: ['svelte-motion', 'cssstyle']
 	},
 	optimizeDeps: {
-		include: ['svelte', 'svelte/internal']
+		include: ['svelte', 'svelte/internal', 'cssstyle', 'cssstyle/lib/generated/properties.js']
 	}
 });

@@ -280,18 +280,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, ip, plat
 		ExpiresIn:        int64(accTokenExp.Seconds()),
 		ExpiresRefreshIn: int64(refreshTokenExp.Seconds()),
 		Status:           "accepted",
-		User: &entity.UserResponse{
-			ID:              user.ID,
-			Email:           user.Email,
-			FullName:        user.FullName,
-			Phone:           user.Phone.String,
-			AvatarURL:       user.AvatarURL.String,
-			TwoFaSecret:     user.TwoFaSecret.String,
-			EmailVerifiedAt: user.EmailVerifiedAt,
-			LastLoginAt:     user.LastLoginAt,
-			CreatedAt:       user.CreatedAt,
-			UpdatedAt:       user.UpdatedAt,
-		},
+		User: entity.NewUserResponse(user, &userTenant.Tenant, &userTenant.UserTenant, &userTenant.Role),
 	}, nil
 }
 func (s *AuthService) Register(ctx context.Context, req *dto.RegisterUserRequest) (*entity.User, error) {
@@ -673,7 +662,9 @@ func (s *AuthService) VerifyEmail(ctx context.Context, tokenString string) error
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
-	if user.Status == entity.UserStatusActive {
+	// Verification is tracked by email_verified_at, NOT status: a freshly
+	// registered user is already status=active but still email-unverified.
+	if user.IsVerified() {
 		return errors.New("email already verified")
 	}
 
@@ -945,19 +936,29 @@ func (s *AuthService) VerifyTwoFactor(ctx context.Context, req *dto.VerifyTwoFac
 }
 
 func (s *AuthService) ValidateToken(tokenString string) (*dto.JWTClaims, error) {
-	token, err := utils.VerifyJWT(tokenString, s.jwtSecret)
-	if err != nil {
-		s.logger.Debug("Token validation failed", zap.Error(err))
-		return nil, dto.ErrInvalidToken
-	}
-	if !token.Valid {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, fmt.Errorf("unauthorized - invalid or expired token: %w", err)
-		}
+	if tokenString == "" {
 		return nil, dto.ErrInvalidToken
 	}
 
-	return nil, dto.ErrInvalidToken
+	claims := &dto.JWTClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil {
+		s.logger.Debug("Token validation failed", zap.Error(err))
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, fmt.Errorf("unauthorized - token expired: %w", err)
+		}
+		return nil, dto.ErrInvalidToken
+	}
+	if !token.Valid {
+		return nil, dto.ErrInvalidToken
+	}
+
+	return claims, nil
 }
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken, platform string) (*dto.LoginResponse, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
@@ -1051,18 +1052,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken, platform s
 		ExpiresIn:        int64(accTokenExp.Seconds()),
 		ExpiresRefreshIn: int64(refreshTokenExp.Seconds()),
 		Status:           "accepted",
-		User: &entity.UserResponse{
-			ID:              userTenant.User.ID,
-			Email:           userTenant.User.Email,
-			FullName:        userTenant.User.FullName,
-			Phone:           userTenant.User.Phone.String,
-			AvatarURL:       userTenant.User.AvatarURL.String,
-			TwoFaSecret:     userTenant.User.TwoFaSecret.String,
-			EmailVerifiedAt: userTenant.User.EmailVerifiedAt,
-			LastLoginAt:     userTenant.User.LastLoginAt,
-			CreatedAt:       userTenant.User.CreatedAt,
-			UpdatedAt:       userTenant.User.UpdatedAt,
-		},
+		User: userTenant.ToResponse(),
 	}, nil
 }
 func (s *AuthService) CheckPermission(ctx context.Context, userID uuid.UUID, permission string) error {

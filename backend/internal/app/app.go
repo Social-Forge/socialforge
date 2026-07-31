@@ -42,6 +42,15 @@ func setupMiddlewares(app *fiber.App, cont *dependencies.Container) {
 		return c.SendString("Hello from Go backend!")
 	})
 
+	// Liveness probe used by Docker/compose healthchecks and the reverse proxy.
+	app.Get("/health", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status":  "ok",
+			"service": cont.Config.App.Name,
+			"time":    time.Now().UTC(),
+		})
+	})
+
 	app.Use(func(c fiber.Ctx) error {
 		config.Logger.Info("---Request---", zap.String("path", c.Path()))
 		ip := c.Get("X-Forwarded-For")

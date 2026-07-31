@@ -1,6 +1,7 @@
 import { definePageMetaTags } from 'svelte-meta-tags';
 
 export const load = async ({ locals }) => {
+	const { user, lang } = locals;
 	const pageMetaTags = definePageMetaTags({
 		title: 'Social Forge - Multi-agent Customer Service and Omnichannel CRM',
 		robots: 'index, follow',
@@ -13,6 +14,8 @@ export const load = async ({ locals }) => {
 	});
 
 	return {
-		...pageMetaTags
+		...pageMetaTags,
+		user,
+		lang
 	};
 };

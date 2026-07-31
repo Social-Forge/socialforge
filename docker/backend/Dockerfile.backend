@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Development
-FROM golang:1.25-alpine AS development
+FROM golang:1.26-alpine AS development
 
 # Install air for hot reload and other dependencies
 RUN go install github.com/air-verse/air@latest && \
@@ -26,7 +26,7 @@ EXPOSE 8080
 CMD ["air", "-c", ".air.toml"]
 
 # Stage 2: Builder
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies with pinned versions
 RUN apk add --no-cache \
@@ -49,10 +49,11 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application binaries (server + worker).
+# Schema migrations are run via the dedicated `migrate/migrate` image in
+# docker-compose (profile: tools), not an in-app binary.
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/server ./cmd/api/main.go && \
-    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/worker ./cmd/worker/main.go && \
-    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/migrate ./cmd/migrate/main.go
+    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/worker ./cmd/worker/main.go
 
 # Stage 3: Production
 FROM alpine:3.19 AS production
@@ -77,9 +78,8 @@ WORKDIR /app
 # Copy binaries from builder
 COPY --from=builder /app/bin/server /app/server
 COPY --from=builder /app/bin/worker /app/worker
-COPY --from=builder /app/bin/migrate /app/migrate
 
-# Copy migration files if needed
+# Copy migration files (used by the migrate/migrate compose service and for reference)
 COPY --from=builder /app/database/migrations /app/database/migrations
 
 # Change ownership

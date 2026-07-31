@@ -6,7 +6,7 @@ export const authRoutes = [
 	'/signup',
 	'/verify-email',
 	'/reset-password',
-	'/verify-two-factor',
+	'/two-factor',
 	'/forgot-password',
 	'/confirm'
 ];

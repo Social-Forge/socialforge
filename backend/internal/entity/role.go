@@ -27,6 +27,7 @@ type Role struct {
 	Level       int        `json:"level" db:"level" validate:"min=0,max=3"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+	DeletedAt   NullTime   `json:"deleted_at,omitempty" db:"deleted_at"`
 }
 
 // TableName returns the table name for Role

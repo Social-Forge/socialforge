@@ -47,6 +47,27 @@ func NewAuthMiddleware(notifier config.Notifier, ctxinject *ContextMiddleware, r
 	}
 }
 
+// RequireRoles guards a route so only callers holding one of the given role
+// names may pass. Must run AFTER JWTAuth (which populates role_name in Locals).
+func (m *AuthMiddleware) RequireRoles(roles ...string) fiber.Handler {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, r := range roles {
+		allowed[r] = struct{}{}
+	}
+	return func(c fiber.Ctx) error {
+		names, ok := c.Locals("role_name").([]string)
+		if !ok {
+			return helpers.Respond(c, fiber.StatusForbidden, "Insufficient permissions", nil)
+		}
+		for _, n := range names {
+			if _, found := allowed[n]; found {
+				return c.Next()
+			}
+		}
+		return helpers.Respond(c, fiber.StatusForbidden, "Insufficient permissions", nil)
+	}
+}
+
 func (m *AuthMiddleware) JWTAuth() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx := m.ctxinject.From(c)

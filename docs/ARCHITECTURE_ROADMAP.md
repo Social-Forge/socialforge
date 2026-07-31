@@ -314,19 +314,24 @@ Tiap fase = increment yang **jalan & bisa dites**. Selesai tiap fase → commit 
 - [x] Perbaiki rantai identity: `UserTenantWithDetails` + `UserResponse` aggregate, `GetUserTenantWithDetailsByUserID`, **Register atomik + buat `user_tenants` membership** (sebelumnya putus). Hapus 3 method repo dead+broken (`u.is_active`).
 - [x] `division_repository` diperbaiki total (INSERT arg, `owner_id` hantu, `$?` mismatch, scany, RLS-aware). `tenant_helper` diperbaiki.
 - [x] **Build hijau (`go build ./...`) + `go vet` clean.**
-- [ ] `docker-compose` sanity: service `backend` + `worker` + `frontend` + `nginx` lengkap. _(berikutnya)_
-- [ ] `migrate up/down` mulus di DB nyata _(perlu dijalankan user via tooling migrate)_.
+- [x] `docker-compose` app services lengkap: `backend` (air hot-reload, target development), `worker` (`cmd/worker` skeleton baru), `web` (SvelteKit vite dev), `migrate` (image `migrate/migrate`, profile `tools`), `nginx` (profile `proxy`, `docker/nginx/dev.conf` proxy per-service). Dockerfile.backend diperbaiki (buang `cmd/migrate` yang hilang, base image → `golang:1.26-alpine`). Tambah `/health` endpoint. `docker compose config` valid.
+- [x] **Migrasi `up` mulus ke versi 37** + **smoke test full-stack LULUS**: infra healthy → `migrate up` → backend `/health` 200 → **register 201** (rantai identity: tenant+user+`user_tenants` membership atomik) → **login 200** (JWT + session + `GetUserTenantWithDetailsByUserID`, response user lengkap: is_active/is_verified/tenant/role).
+  - Smoke test menemukan & memperbaiki **7 mismatch migrasi/skema** tambahan: `000008` (`;`→`,`), `000016` & `000033` (CREATE POLICY tak diakhiri `;`), tenant INSERT (20 kolom/19 placeholder → `$20`), tabel `roles` (tambah `deleted_at` + seed 4 role via `000035`), tabel `tokens` hilang (`000036`), tabel `sessions` hilang (`000037`).
+  - ⚠️ Catatan dev: **air hot-reload tidak jalan andal di bind-mount Windows** (fsnotify) → `docker compose restart backend` untuk reload.
 
 > **Dipindah ke fase pemakainya** (hindari skema spekulatif tanpa konsumen):
 > - `ai_knowledge.embedding` JSONB → **pgvector `vector(N)`** → **Fase 5** (dimensi N mengikuti model embedding OpenRouter yang dipilih; butuh dependency `pgvector-go`).
 > - Tabel `webhook_events` (dedup) → **Fase 2**; `auto_responses` → **Fase 3**; `auto_assign_rules` → **Fase 3**.
 > - RLS untuk `contacts` (PII) → **Fase 2** (saat contact dibangun).
 
-### Fase 1 — Auth & Tenant Lengkap
-- [ ] Signup, Signin, Verify Email, Forgot/Reset, Confirm + Social OAuth (signin/signup).
-- [ ] Refresh token rotation + session revoke; rate-limit + anti-abuse di auth.
-- [ ] Superadmin panel (middleware role) + tenant provisioning (default Free plan).
-- [ ] Division CRUD, member (Supervisor/Agent), channel-assign, quota middleware dasar.
+### Fase 1 — Auth & Tenant Lengkap ✅ **SELESAI + terverifikasi live**
+- [x] Signup, Signin, Verify Email, Forgot/Reset, Refresh, Logout, 2FA — semua diuji live. Fix bug `ValidateToken` (selalu error) & `VerifyEmail` (status vs email_verified).
+- [x] Rate-limit + anti-abuse (login 429 terverifikasi). OAuth routes ada (butuh provider config untuk uji).
+- [x] Superadmin guard (`AuthMiddleware.RequireRoles`) + endpoint cross-tenant `/api/superadmin/protected/tenants` (owner→403, superadmin→200).
+- [x] **Division vertical** (`/api/divisions/protected/*`): CRUD + member management, RLS-scoped (RunInTenantTx). Owner-only CUD, owner+supervisor member ops.
+- [x] **Member vertical** (`/api/members/protected/*`): Owner CRUD Supervisor/Agent (atomic user + user_tenants).
+- [x] **Quota middleware**: agent quota (max_agents) + division quota (max_divisions) — terverifikasi ("agent quota reached max 1 for plan free").
+- [ ] OAuth end-to-end (butuh kredensial provider) & channel-assign ke division → saat channel dibangun (Fase 2).
 
 ### Fase 2 — Channel & Ingestion (WAHA + Telegram dulu)
 - [ ] Unified Message Envelope + normalizer.

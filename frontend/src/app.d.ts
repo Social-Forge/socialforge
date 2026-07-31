@@ -14,6 +14,7 @@ declare global {
 			safeGetUser: () => Promise<UserResponse | null>;
 			user?: UserResponse | null;
 			origin?: string;
+			lang: string;
 		}
 		interface PageData {
 			user?: UserResponse | null;

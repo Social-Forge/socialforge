@@ -23,6 +23,6 @@ CREATE POLICY tenant_isolation ON messages USING (tenant_id = current_setting('a
 
 CREATE POLICY tenant_isolation ON message_outboxes USING (tenant_id = current_setting('app.current_tenant', true)::uuid) WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
-CREATE POLICY tenant_isolation ON conversation_events USING (tenant_id = current_setting('app.current_tenant', true)::uuid) WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid)
+CREATE POLICY tenant_isolation ON conversation_events USING (tenant_id = current_setting('app.current_tenant', true)::uuid) WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 COMMIT;
