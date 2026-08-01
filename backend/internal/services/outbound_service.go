@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github/socialforge/internal/entity"
 	"github/socialforge/internal/infra/centrifugo"
+	"github/socialforge/internal/infra/channels"
 	"github/socialforge/internal/infra/contextpool"
 	"github/socialforge/internal/infra/rabbitmq"
 	"github/socialforge/internal/infra/repository"
@@ -25,8 +26,11 @@ type OutboundService struct {
 	conversationRepo repository.ConversationRepository
 	messageRepo      repository.MessageRepository
 	outboxRepo       repository.MessageOutboxRepository
+	channelRepo      repository.ChannelRepository
+	contactRepo      repository.ContactRepository
 	centrifugo       *centrifugo.CentrifugoClient
 	rabbit           *rabbitmq.Client
+	senders          map[string]channels.Sender
 	logger           *zap.Logger
 }
 
@@ -34,16 +38,22 @@ func NewOutboundService(
 	conversationRepo repository.ConversationRepository,
 	messageRepo repository.MessageRepository,
 	outboxRepo repository.MessageOutboxRepository,
+	channelRepo repository.ChannelRepository,
+	contactRepo repository.ContactRepository,
 	centrifugoClient *centrifugo.CentrifugoClient,
 	rabbit *rabbitmq.Client,
+	senders map[string]channels.Sender,
 	logger *zap.Logger,
 ) *OutboundService {
 	return &OutboundService{
 		conversationRepo: conversationRepo,
 		messageRepo:      messageRepo,
 		outboxRepo:       outboxRepo,
+		channelRepo:      channelRepo,
+		contactRepo:      contactRepo,
 		centrifugo:       centrifugoClient,
 		rabbit:           rabbit,
+		senders:          senders,
 		logger:           logger,
 	}
 }
@@ -123,8 +133,10 @@ func (s *OutboundService) SendText(ctx context.Context, tenantID, conversationID
 	return msg, nil
 }
 
-// ProcessDispatch is the worker consumer for outbound delivery. Fase 2D ships a
-// stub sender (marks delivered); Fase 2E plugs in the real WAHA/Telegram send.
+// ProcessDispatch is the worker consumer for outbound delivery: it resolves the
+// channel + recipient and sends via the provider adapter, then records the
+// delivery outcome. Send failures are recorded (status=failed) without requeue;
+// the outbox row retains attempt state for a future retry sweep.
 func (s *OutboundService) ProcessDispatch(ctx context.Context, jobBody []byte) error {
 	var job DispatchJob
 	if err := json.Unmarshal(jobBody, &job); err != nil {
@@ -139,31 +151,65 @@ func (s *OutboundService) ProcessDispatch(ctx context.Context, jobBody []byte) e
 		return fmt.Errorf("invalid message id: %w", err)
 	}
 
-	// TODO(Fase 2E): resolve the channel + call the provider adapter to actually
-	// send. For now we optimistically mark the message as sent.
 	tctx := repository.WithTenantID(ctx, tid)
-	var convID uuid.UUID
+	var msg *entity.Message
+	var channel *entity.Channel
+	var contact *entity.Contact
 	err = s.messageRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
-		m, err := s.messageRepo.FindByID(txCtx, mid)
+		var err error
+		if msg, err = s.messageRepo.FindByID(txCtx, mid); err != nil {
+			return err
+		}
+		conv, err := s.conversationRepo.FindByID(txCtx, msg.ConversationID)
 		if err != nil {
 			return err
 		}
-		convID = m.ConversationID
-		if err := s.messageRepo.UpdateStatus(txCtx, mid, entity.MessageStatusSent, ""); err != nil {
+		if channel, err = s.channelRepo.FindByID(txCtx, conv.ChannelID); err != nil {
 			return err
 		}
-		return s.outboxRepo.SetStatusByMessage(txCtx, mid, entity.OutboxStatusSent, "")
+		contact, err = s.contactRepo.FindByID(txCtx, conv.ContactID)
+		return err
 	})
 	if err != nil {
 		return err
 	}
 
-	if s.centrifugo != nil && convID != uuid.Nil {
-		_ = s.centrifugo.BroadcastConversationUpdate(ctx, convID.String(), map[string]interface{}{
+	sender := s.senders[channel.Type]
+	if sender == nil {
+		s.recordOutcome(ctx, tctx, mid, msg.ConversationID, entity.MessageStatusFailed, "no sender configured for "+channel.Type)
+		return nil
+	}
+
+	providerID, sendErr := sender.SendText(ctx, channel, contact.ExternalID, msg.Body.String)
+	if sendErr != nil {
+		s.logger.Warn("provider send failed", zap.String("channel_type", channel.Type), zap.Error(sendErr))
+		s.recordOutcome(ctx, tctx, mid, msg.ConversationID, entity.MessageStatusFailed, sendErr.Error())
+		return nil
+	}
+	s.logger.Info("message delivered", zap.String("channel_type", channel.Type), zap.String("provider_message_id", providerID))
+	s.recordOutcome(ctx, tctx, mid, msg.ConversationID, entity.MessageStatusSent, "")
+	return nil
+}
+
+func (s *OutboundService) recordOutcome(ctx context.Context, tctx context.Context, messageID, conversationID uuid.UUID, status, errMsg string) {
+	outboxStatus := entity.OutboxStatusSent
+	if status == entity.MessageStatusFailed {
+		outboxStatus = entity.OutboxStatusFailed
+	}
+	err := s.messageRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
+		if err := s.messageRepo.UpdateStatus(txCtx, messageID, status, errMsg); err != nil {
+			return err
+		}
+		return s.outboxRepo.SetStatusByMessage(txCtx, messageID, outboxStatus, errMsg)
+	})
+	if err != nil {
+		s.logger.Error("failed to record dispatch outcome", zap.Error(err))
+	}
+	if s.centrifugo != nil && conversationID != uuid.Nil {
+		_ = s.centrifugo.BroadcastConversationUpdate(ctx, conversationID.String(), map[string]interface{}{
 			"type":       "message_status",
-			"message_id": mid.String(),
-			"status":     entity.MessageStatusSent,
+			"message_id": messageID.String(),
+			"status":     status,
 		})
 	}
-	return nil
 }

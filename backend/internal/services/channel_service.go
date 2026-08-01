@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github/socialforge/internal/dto"
 	"github/socialforge/internal/entity"
+	"github/socialforge/internal/infra/channels"
 	"github/socialforge/internal/infra/contextpool"
 	"github/socialforge/internal/infra/repository"
 	"github/socialforge/internal/utils"
@@ -19,6 +20,9 @@ type ChannelService struct {
 	channelRepo  repository.ChannelRepository
 	divisionRepo repository.DivisionRepository
 	tenantRepo   repository.TenantRepository
+	connectors   map[string]channels.Connector
+	appURL       string // public base URL for provider webhooks (Telegram, Meta)
+	internalURL  string // in-network base URL for WAHA -> backend webhooks
 	logger       *zap.Logger
 }
 
@@ -26,14 +30,79 @@ func NewChannelService(
 	channelRepo repository.ChannelRepository,
 	divisionRepo repository.DivisionRepository,
 	tenantRepo repository.TenantRepository,
+	connectors map[string]channels.Connector,
+	appURL, internalURL string,
 	logger *zap.Logger,
 ) *ChannelService {
+	if internalURL == "" {
+		internalURL = "http://backend:8080"
+	}
 	return &ChannelService{
 		channelRepo:  channelRepo,
 		divisionRepo: divisionRepo,
 		tenantRepo:   tenantRepo,
+		connectors:   connectors,
+		appURL:       appURL,
+		internalURL:  internalURL,
 		logger:       logger,
 	}
+}
+
+// Connect registers the channel with its provider (webhook + session) and
+// updates its status. Returns provider info (e.g. WAHA QR url).
+func (s *ChannelService) Connect(ctx context.Context, tenantID, id string) (map[string]interface{}, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 25*time.Second)
+	defer cancel()
+
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	channelID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid channel id: %w", err)
+	}
+
+	var channel *entity.Channel
+	err = s.channelRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
+		channel, err = s.channelRepo.FindByID(txCtx, channelID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	connector := s.connectors[channel.Type]
+	if connector == nil {
+		return nil, fmt.Errorf("channel type %s does not support connect yet", channel.Type)
+	}
+
+	provider := providerForChannelType(channel.Type)
+	secret := ""
+	if channel.WebhookSecret.Valid {
+		secret = channel.WebhookSecret.String
+	}
+	// WAHA calls back over the docker network; Telegram/Meta need a public URL.
+	base := s.appURL
+	if channel.Type == entity.ChannelTypeWhatsAppWaha {
+		base = s.internalURL
+	}
+	webhookURL := fmt.Sprintf("%s/api/webhooks/%s/%s", strings.TrimRight(base, "/"), provider, channel.ID)
+
+	info, status, connErr := connector.Connect(subCtx, channel, webhookURL, secret)
+	// Persist the resulting status regardless of connect outcome.
+	_ = s.channelRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
+		return s.channelRepo.UpdateStatus(txCtx, channelID, status)
+	})
+	if connErr != nil {
+		return nil, connErr
+	}
+	if info == nil {
+		info = map[string]interface{}{}
+	}
+	info["status"] = status
+	info["webhook_url"] = webhookURL
+	return info, nil
 }
 
 // channelQuota maps a channel type to its per-tenant plan limit.

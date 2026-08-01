@@ -20,13 +20,16 @@ func NewConversationFactory(
 	cont *dependencies.Container,
 	mw *MiddlewareFactory,
 ) *ConversationFactory {
-	convSvc := services.NewConversationService(cont.ConversationRepo, cont.MessageRepo, cont.Logger)
+	convSvc := services.NewConversationService(cont.ConversationRepo, cont.MessageRepo, cont.CentrifugoClient, cont.Logger)
 	outbound := services.NewOutboundService(
 		cont.ConversationRepo,
 		cont.MessageRepo,
 		cont.MessageOutboxRepo,
+		cont.ChannelRepo,
+		cont.ContactRepo,
 		cont.CentrifugoClient,
 		cont.RabbitMQ,
+		services.BuildSenders(cont.Config),
 		cont.Logger,
 	)
 	handler := handlers.NewConversationHandler(mw.ContextMiddleware, convSvc, outbound, cont.Logger)

@@ -25,6 +25,12 @@ type ConversationRepository interface {
 	List(ctx context.Context, tenantID uuid.UUID, status string, assignedAgentID *uuid.UUID) ([]*entity.Convertation, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
 	Assign(ctx context.Context, id uuid.UUID, agentID *uuid.UUID) error
+	SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error
+	SetArchived(ctx context.Context, id uuid.UUID, archived bool) error
+	MarkRead(ctx context.Context, id uuid.UUID) error
+	// PickAgentForDivision returns the least-loaded active agent/supervisor in a
+	// division (fewest open conversations) for auto-assignment, or nil if none.
+	PickAgentForDivision(ctx context.Context, tenantID, divisionID uuid.UUID) (*uuid.UUID, error)
 }
 
 type conversationRepository struct {
@@ -144,6 +150,80 @@ func (r *conversationRepository) UpdateStatus(ctx context.Context, id uuid.UUID,
 		return fmt.Errorf("conversation not found")
 	}
 	return nil
+}
+
+func (r *conversationRepository) SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tag, err := r.q(subCtx).Exec(subCtx, `UPDATE conversations SET is_pinned = $1 WHERE id = $2`, pinned, id)
+	if err != nil {
+		return fmt.Errorf("failed to set pinned: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("conversation not found")
+	}
+	return nil
+}
+
+func (r *conversationRepository) SetArchived(ctx context.Context, id uuid.UUID, archived bool) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	status := ""
+	if archived {
+		status = entity.ConversationStatusArchived
+	}
+	// Archiving also moves status to 'archived'; unarchiving reopens as unassigned/open based on assignment.
+	query := `UPDATE conversations SET is_archived = $1,
+		status = CASE WHEN $1 THEN 'archived'
+		              WHEN assigned_agent_id IS NULL THEN 'unassigned'
+		              ELSE 'open' END
+		WHERE id = $2`
+	tag, err := r.q(subCtx).Exec(subCtx, query, archived, id)
+	if err != nil {
+		return fmt.Errorf("failed to set archived: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("conversation not found")
+	}
+	_ = status
+	return nil
+}
+
+func (r *conversationRepository) MarkRead(ctx context.Context, id uuid.UUID) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	_, err := r.q(subCtx).Exec(subCtx, `UPDATE conversations SET unread_count = 0 WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("failed to mark read: %w", err)
+	}
+	return nil
+}
+
+func (r *conversationRepository) PickAgentForDivision(ctx context.Context, tenantID, divisionID uuid.UUID) (*uuid.UUID, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	query := `
+		SELECT ut.user_id
+		FROM division_members dm
+		JOIN user_tenants ut ON ut.id = dm.user_tenant_id AND ut.is_active = true AND ut.deleted_at IS NULL
+		JOIN roles r ON r.id = ut.role_id AND r.slug IN ('agent', 'supervisor')
+		LEFT JOIN conversations c ON c.assigned_agent_id = ut.user_id
+			AND c.tenant_id = $1 AND c.status = 'open' AND c.is_archived = false
+		WHERE dm.division_id = $2 AND dm.is_active = true AND dm.deleted_at IS NULL
+		GROUP BY ut.user_id
+		ORDER BY COUNT(c.id) ASC, random()
+		LIMIT 1`
+
+	var agentID uuid.UUID
+	err := r.q(subCtx).QueryRow(subCtx, query, tenantID, divisionID).Scan(&agentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil // no active agent -> leave unassigned
+		}
+		return nil, fmt.Errorf("failed to pick agent: %w", err)
+	}
+	return &agentID, nil
 }
 
 func (r *conversationRepository) Assign(ctx context.Context, id uuid.UUID, agentID *uuid.UUID) error {

@@ -23,6 +23,11 @@ const translations: Record<string, Record<string, string>> = {
 	}
 	// Tambahkan bahasa lain sesuai kebutuhan
 };
+export function formatTime(input: string | Date) {
+	const date = typeof input === 'string' ? new Date(input) : input;
+	return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 export const formatTimeAgo = (dateString?: string, lang: string = 'en') => {
 	if (!dateString) return '';
 	try {

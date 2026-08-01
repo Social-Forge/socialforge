@@ -59,3 +59,38 @@ declare global {
 }
 
 export {};
+
+declare namespace svelteHTML {
+	interface IntrinsicElements {
+		[element: string]: {
+			'on:longpress'?: (event: CustomEvent) => void;
+			'on:shortpress'?: (event: CustomEvent) => void;
+		};
+	}
+}
+
+declare namespace svelteHTML {
+	interface HTMLAttributes<T> {
+		'on:longpress'?: (event: CustomEvent) => void;
+		'on:shortpress'?: (event: CustomEvent) => void;
+	}
+}
+
+declare module 'svelte/elements' {
+	export interface HTMLAttributes<T> {
+		onlongpress?: (event: CustomEvent) => void;
+		onshortpress?: (event: CustomEvent) => void;
+	}
+}
+
+export interface LongPressEvent extends CustomEvent {
+	detail: {
+		// tambahkan detail jika perlu
+	};
+}
+
+export interface ShortPressEvent extends CustomEvent {
+	detail: {
+		// tambahkan detail jika perlu
+	};
+}

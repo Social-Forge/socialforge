@@ -42,6 +42,10 @@
 	--sidebar-accent-foreground: oklch(0.205 0 0);
 	--sidebar-border: oklch(0.922 0 0);
 	--sidebar-ring: oklch(0.708 0 0);
+	--bubble-out: 158 55% 24%;
+	--bubble-out-foreground: 0 0% 100%;
+	--bubble-in: 150 15% 95%;
+	--bubble-in-foreground: 160 15% 14%;
 }
 
 .dark {
@@ -76,6 +80,10 @@
 	--sidebar-accent-foreground: oklch(0.985 0 0);
 	--sidebar-border: oklch(1 0 0 / 10%);
 	--sidebar-ring: oklch(0.556 0 0);
+	--bubble-out: 158 45% 22%;
+	--bubble-out-foreground: 0 0% 96%;
+	--bubble-in: 165 15% 15%;
+	--bubble-in-foreground: 150 15% 90%;
 }
 
 @theme inline {
@@ -149,6 +157,10 @@
 	--animate-page-fade-out-up: fadeOutUp 0.5s ease-out forwards;
 	--animate-page-fade-in-down: fadeInDown 0.5s ease-in forwards;
 	--animate-page-fade-out-down: fadeOutDown 0.5s ease-out forwards;
+	--color-bubble-out: hsl(var(--bubble-out));
+	--color-bubble-out-foreground: hsl(var(--bubble-out-foreground));
+	--color-bubble-in: hsl(var(--bubble-in));
+	--color-bubble-in-foreground: hsl(var(--bubble-in-foreground));
 
 	/* Keyframes Definitions */
 	@keyframes accordion-down {
@@ -526,19 +538,19 @@
 		color: hsl(var(--foreground));
 	}
 	::-webkit-scrollbar {
-		@apply scrollbar-hover:scrollbar-thumb-neutral-700 dark:scrollbar-hover:scrollbar-thumb-black scrollbar-active:scrollbar-thumb-neutral-700 dark:scrollbar-active:scrollbar-thumb-black scrollbar-thin scrollbar-thumb-neutral-500 scrollbar-track-neutral-200 dark:scrollbar-thumb-neutral-950 dark:scrollbar-track-neutral-800;
+		@apply scrollbar-thin scrollbar-thumb-neutral-500 scrollbar-track-neutral-200 dark:scrollbar-thumb-neutral-950 dark:scrollbar-track-neutral-800 scrollbar-hover:scrollbar-thumb-neutral-700 dark:scrollbar-hover:scrollbar-thumb-black scrollbar-active:scrollbar-thumb-neutral-700 dark:scrollbar-active:scrollbar-thumb-black;
 		/* display: none;
 		width: 0px;
 		background: transparent; */
 	}
 	::-webkit-scrollbar-button {
-    @apply scrollbar-thin scrollbar-thumb-neutral-500 scrollbar-track-neutral-200 dark:scrollbar-thumb-neutral-950 dark:scrollbar-track-neutral-800 scrollbar-hover:scrollbar-thumb-neutral-700 dark:scrollbar-hover:scrollbar-thumb-black scrollbar-active:scrollbar-thumb-neutral-700 dark:scrollbar-active:scrollbar-thumb-black;
+		@apply scrollbar-thin scrollbar-thumb-neutral-500 scrollbar-track-neutral-200 dark:scrollbar-thumb-neutral-950 dark:scrollbar-track-neutral-800 scrollbar-hover:scrollbar-thumb-neutral-700 dark:scrollbar-hover:scrollbar-thumb-black scrollbar-active:scrollbar-thumb-neutral-700 dark:scrollbar-active:scrollbar-thumb-black;
 		/* display: none;
 		width: 0px;
 		background: transparent; */
 	}
 	::-moz-scrollbar {
-    @apply scrollbar-thin scrollbar-thumb-neutral-500 scrollbar-track-neutral-200 dark:scrollbar-thumb-neutral-950 dark:scrollbar-track-neutral-800 scrollbar-hover:scrollbar-thumb-neutral-700 dark:scrollbar-hover:scrollbar-thumb-black scrollbar-active:scrollbar-thumb-neutral-700 dark:scrollbar-active:scrollbar-thumb-black;
+		@apply scrollbar-thin scrollbar-thumb-neutral-500 scrollbar-track-neutral-200 dark:scrollbar-thumb-neutral-950 dark:scrollbar-track-neutral-800 scrollbar-hover:scrollbar-thumb-neutral-700 dark:scrollbar-hover:scrollbar-thumb-black scrollbar-active:scrollbar-thumb-neutral-700 dark:scrollbar-active:scrollbar-thumb-black;
 		/* display: none;
 		width: 0px;
 		background: transparent; */
@@ -561,5 +573,8 @@
 		color: hsl(0 0% 98%);
 		color: rgb(38, 38, 38);
 		/* @apply to-purple-500 */
+	}
+	.scrollbar-thin {
+		@apply scrollbar-thin scrollbar-thumb-neutral-500 scrollbar-track-neutral-200 dark:scrollbar-thumb-neutral-950 dark:scrollbar-track-neutral-800 scrollbar-hover:scrollbar-thumb-neutral-700 dark:scrollbar-hover:scrollbar-thumb-black scrollbar-active:scrollbar-thumb-neutral-700 dark:scrollbar-active:scrollbar-thumb-black;
 	}
 }

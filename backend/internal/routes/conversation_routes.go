@@ -39,4 +39,15 @@ func (r *ConversationRoutes) RegisterRoutes(parent fiber.Router) {
 	protected.Get("/", r.handler.List)
 	protected.Get("/:id/messages", r.handler.ListMessages)
 	protected.Post("/:id/messages", r.handler.SendMessage)
+
+	// Conversation actions
+	protected.Post("/:id/assign", r.handler.Assign)
+	protected.Post("/:id/unassign", r.handler.Unassign)
+	protected.Post("/:id/complete", r.handler.Complete)
+	protected.Post("/:id/reopen", r.handler.Reopen)
+	protected.Post("/:id/read", r.handler.MarkRead)
+	protected.Post("/:id/pin", r.handler.Pin)
+	protected.Post("/:id/unpin", r.handler.Unpin)
+	protected.Post("/:id/archive", r.handler.Archive)
+	protected.Post("/:id/unarchive", r.handler.Unarchive)
 }

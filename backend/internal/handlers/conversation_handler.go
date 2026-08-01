@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"github/socialforge/internal/entity"
 	"github/socialforge/internal/helpers"
 	"github/socialforge/internal/middlewares"
 	"github/socialforge/internal/services"
@@ -12,6 +14,10 @@ import (
 
 type sendMessageRequest struct {
 	Text string `json:"text" validate:"required,min=1,max=8000"`
+}
+
+type assignRequest struct {
+	AgentID string `json:"agent_id" validate:"required,uuid4"`
 }
 
 type ConversationHandler struct {
@@ -36,6 +42,81 @@ func (h *ConversationHandler) tenantID(c fiber.Ctx) (string, bool) {
 		return "", false
 	}
 	return tid, true
+}
+
+func (h *ConversationHandler) hasAnyRole(c fiber.Ctx, roles ...string) bool {
+	names, ok := c.Locals("role_name").([]string)
+	if !ok {
+		return false
+	}
+	for _, have := range names {
+		for _, want := range roles {
+			if have == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// action is a helper for simple conversation mutation endpoints.
+func (h *ConversationHandler) action(c fiber.Ctx, okMsg string, fn func(ctx context.Context, tenantID, id string) error) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	if err := fn(ctx, tenantID, c.Params("id")); err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, okMsg, nil)
+}
+
+func (h *ConversationHandler) Assign(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	if !h.hasAnyRole(c, entity.RoleTenantOwner, entity.RoleSupervisor) {
+		return helpers.Respond(c, fiber.StatusForbidden, "Only owner or supervisor can assign conversations", nil)
+	}
+	var req assignRequest
+	if err := c.Bind().Body(&req); err != nil {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Invalid request payload", nil)
+	}
+	if errs := helpers.ValidateStruct(req); len(errs) > 0 {
+		return helpers.Respond(c, fiber.StatusBadRequest, helpers.ValidationErrors{Errors: errs}.Error(), nil)
+	}
+	if err := h.convSvc.Assign(ctx, tenantID, c.Params("id"), req.AgentID); err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Conversation assigned", nil)
+}
+
+func (h *ConversationHandler) Unassign(c fiber.Ctx) error {
+	return h.action(c, "Conversation unassigned", h.convSvc.Unassign)
+}
+func (h *ConversationHandler) Complete(c fiber.Ctx) error {
+	return h.action(c, "Conversation marked completed", h.convSvc.Complete)
+}
+func (h *ConversationHandler) Reopen(c fiber.Ctx) error {
+	return h.action(c, "Conversation reopened", h.convSvc.Reopen)
+}
+func (h *ConversationHandler) MarkRead(c fiber.Ctx) error {
+	return h.action(c, "Conversation marked read", h.convSvc.MarkRead)
+}
+func (h *ConversationHandler) Pin(c fiber.Ctx) error {
+	return h.action(c, "Conversation pinned", func(ctx context.Context, t, id string) error { return h.convSvc.SetPinned(ctx, t, id, true) })
+}
+func (h *ConversationHandler) Unpin(c fiber.Ctx) error {
+	return h.action(c, "Conversation unpinned", func(ctx context.Context, t, id string) error { return h.convSvc.SetPinned(ctx, t, id, false) })
+}
+func (h *ConversationHandler) Archive(c fiber.Ctx) error {
+	return h.action(c, "Conversation archived", func(ctx context.Context, t, id string) error { return h.convSvc.SetArchived(ctx, t, id, true) })
+}
+func (h *ConversationHandler) Unarchive(c fiber.Ctx) error {
+	return h.action(c, "Conversation unarchived", func(ctx context.Context, t, id string) error { return h.convSvc.SetArchived(ctx, t, id, false) })
 }
 
 func (h *ConversationHandler) List(c fiber.Ctx) error {

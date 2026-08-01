@@ -23,6 +23,9 @@ func NewChannelFactory(
 		cont.ChannelRepo,
 		cont.DivisionRepo,
 		cont.TenantRepo,
+		services.BuildConnectors(cont.Config),
+		cont.Config.App.URL,
+		"",
 		cont.Logger,
 	)
 	handler := handlers.NewChannelHandler(mw.ContextMiddleware, service, cont.Logger)

@@ -119,6 +119,23 @@ func (h *ChannelHandler) Update(c fiber.Ctx) error {
 	return helpers.Respond(c, fiber.StatusOK, "Channel updated successfully", channel)
 }
 
+func (h *ChannelHandler) Connect(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	if !h.isOwner(c) {
+		return helpers.Respond(c, fiber.StatusForbidden, "Only the tenant owner can connect channels", nil)
+	}
+	info, err := h.service.Connect(ctx, tenantID, c.Params("id"))
+	if err != nil {
+		h.logger.Error("Failed to connect channel", zap.String("tenant_id", tenantID), zap.Error(err))
+		return helpers.Respond(c, fiber.StatusBadGateway, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Channel connect initiated", info)
+}
+
 func (h *ChannelHandler) Delete(c fiber.Ctx) error {
 	ctx := h.ctxinject.HandlerContext(c)
 	tenantID, ok := h.tenantID(c)

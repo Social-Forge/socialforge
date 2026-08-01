@@ -219,6 +219,17 @@ func (s *IngestionService) processMessage(ctx context.Context, channel *entity.C
 			return err
 		}
 
+		// Auto-assign unassigned conversations to the least-loaded agent in the
+		// channel's division (equal routing). No agent -> stays unassigned.
+		if conv.AssignedAgentID == nil {
+			if agentID, err := s.conversationRepo.PickAgentForDivision(txCtx, channel.TenantID, channel.DivisionID); err == nil && agentID != nil {
+				if err := s.conversationRepo.Assign(txCtx, conv.ID, agentID); err == nil {
+					conv.AssignedAgentID = agentID
+					conv.Status = entity.ConversationStatusOpen
+				}
+			}
+		}
+
 		msg = &entity.Message{
 			TenantID:          channel.TenantID,
 			ConversationID:    conv.ID,

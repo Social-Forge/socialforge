@@ -41,4 +41,5 @@ func (r *ChannelRoutes) RegisterRoutes(parent fiber.Router) {
 	protected.Get("/:id", r.handler.Get)
 	protected.Put("/:id", r.handler.Update)
 	protected.Delete("/:id", r.handler.Delete)
+	protected.Post("/:id/connect", r.handler.Connect)
 }
