@@ -37,4 +37,10 @@ func RegisterApiRoutes(router fiber.Router, cont *dependencies.Container, mw *fa
 
 	conversationFactory := factory.NewConversationFactory(cont, mw)
 	conversationFactory.GetRoutes(router)
+
+	labelFactory := factory.NewLabelFactory(cont, mw)
+	labelFactory.GetRoutes(router)
+
+	quickReplyFactory := factory.NewQuickReplyFactory(cont, mw)
+	quickReplyFactory.GetRoutes(router)
 }

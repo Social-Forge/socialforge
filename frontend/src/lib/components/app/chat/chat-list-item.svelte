@@ -37,9 +37,12 @@
 
 	function handleDropdownOpenChange(open: boolean) {
 		isDropdownOpen = open;
-		if (!open && !isHovered) {
+		if (!open) {
 			isHovered = false;
 		}
+		// if (!open && !isHovered) {
+		// 	isHovered = false;
+		// }
 	}
 
 	function handleMenuItemClick(action: string) {

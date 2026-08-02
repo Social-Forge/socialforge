@@ -49,6 +49,8 @@ type Container struct {
 	MessageRepo      repository.MessageRepository
 	MessageOutboxRepo repository.MessageOutboxRepository
 	WebhookEventRepo repository.WebhookEventRepository
+	LabelRepo        repository.LabelRepository
+	QuickReplyRepo   repository.QuickReplyRepository
 	UserHelper       *helpers.UserHelper
 	TokenHelper      *helpers.TokenHelper
 	TenantHelper     *helpers.TenantHelper
@@ -132,6 +134,8 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	messageRepo := repository.NewMessageRepository(dbPool.Pool)
 	messageOutboxRepo := repository.NewMessageOutboxRepository(dbPool.Pool)
 	webhookEventRepo := repository.NewWebhookEventRepository(dbPool.Pool)
+	labelRepo := repository.NewLabelRepository(dbPool.Pool)
+	quickReplyRepo := repository.NewQuickReplyRepository(dbPool.Pool)
 
 	userHelper := helpers.NewUserHelper(redis, userRepo)
 	tokenHelper := helpers.NewTokenHelper(redis)
@@ -176,6 +180,8 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		MessageRepo:      messageRepo,
 		MessageOutboxRepo: messageOutboxRepo,
 		WebhookEventRepo: webhookEventRepo,
+		LabelRepo:        labelRepo,
+		QuickReplyRepo:   quickReplyRepo,
 		UserHelper:       userHelper,
 		TokenHelper:      tokenHelper,
 		TenantHelper:     tenantHelper,

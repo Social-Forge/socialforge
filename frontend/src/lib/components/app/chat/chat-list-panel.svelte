@@ -49,7 +49,7 @@
 		</div>
 	</div>
 
-	<div class="scrollbar-thin flex items-center gap-2 overflow-x-auto px-4 pb-3">
+	<div class="scrollbar-primary flex items-center gap-2 overflow-x-auto px-4 pb-3">
 		{#each exampleLabels as label (label.id)}
 			<Badge
 				class="cursor-pointer bg-neutral-800 text-[10px] font-semibold text-white active:scale-95 dark:bg-neutral-50 dark:text-neutral-900"

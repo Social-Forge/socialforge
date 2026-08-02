@@ -50,7 +50,12 @@
 			{/each}
 			<Separator class="my-4" />
 			{#each bottomItems as item, i (i)}
-				<AppNavItem icon={item.icon} label={item.label} onClick={() => onNavClick(item.href)} />
+				<AppNavItem
+					icon={item.icon}
+					label={item.label}
+					active={page.url.pathname.includes(item.href)}
+					onClick={() => onNavClick(item.href)}
+				/>
 			{/each}
 		</div>
 	</div>
