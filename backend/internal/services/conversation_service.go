@@ -115,7 +115,7 @@ func (s *ConversationService) MarkRead(ctx context.Context, tenantID, conversati
 	})
 }
 
-func (s *ConversationService) List(ctx context.Context, tenantID, status, agentID string) ([]*entity.Convertation, error) {
+func (s *ConversationService) List(ctx context.Context, tenantID string, f repository.ConversationListFilter) ([]*entity.Convertation, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
@@ -123,22 +123,117 @@ func (s *ConversationService) List(ctx context.Context, tenantID, status, agentI
 	if err != nil {
 		return nil, fmt.Errorf("invalid tenant id: %w", err)
 	}
-	var agentPtr *uuid.UUID
-	if agentID != "" {
-		if a, err := uuid.Parse(agentID); err == nil {
-			agentPtr = &a
-		}
-	}
 
 	var convs []*entity.Convertation
 	err = s.conversationRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
-		convs, err = s.conversationRepo.List(txCtx, tid, status, agentPtr)
+		convs, err = s.conversationRepo.List(txCtx, tid, f)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return convs, nil
+}
+
+// --- Message actions ---
+
+func (s *ConversationService) messageTx(ctx context.Context, tenantID, conversationID string, fn func(txCtx context.Context) error, event string, extra map[string]interface{}) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("invalid tenant id: %w", err)
+	}
+	if err := s.messageRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), fn); err != nil {
+		return err
+	}
+	if s.centrifugo != nil && conversationID != "" {
+		payload := map[string]interface{}{"type": event}
+		for k, v := range extra {
+			payload[k] = v
+		}
+		_ = s.centrifugo.BroadcastConversationUpdate(subCtx, conversationID, payload)
+	}
+	return nil
+}
+
+func (s *ConversationService) SetMessagePinned(ctx context.Context, tenantID, conversationID, messageID string, pinned bool) error {
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return fmt.Errorf("invalid message id: %w", err)
+	}
+	event := "message_pinned"
+	if !pinned {
+		event = "message_unpinned"
+	}
+	return s.messageTx(ctx, tenantID, conversationID, func(txCtx context.Context) error {
+		return s.messageRepo.SetPinned(txCtx, mid, pinned)
+	}, event, map[string]interface{}{"message_id": messageID})
+}
+
+func (s *ConversationService) EditMessage(ctx context.Context, tenantID, conversationID, messageID, body string) (*entity.Message, error) {
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid message id: %w", err)
+	}
+	var out *entity.Message
+	err = s.messageTx(ctx, tenantID, conversationID, func(txCtx context.Context) error {
+		out, err = s.messageRepo.EditBody(txCtx, mid, body)
+		return err
+	}, "message_edited", map[string]interface{}{"message_id": messageID, "body": body})
+	return out, err
+}
+
+func (s *ConversationService) DeleteMessage(ctx context.Context, tenantID, conversationID, messageID string) error {
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return fmt.Errorf("invalid message id: %w", err)
+	}
+	return s.messageTx(ctx, tenantID, conversationID, func(txCtx context.Context) error {
+		return s.messageRepo.SoftDelete(txCtx, mid)
+	}, "message_deleted", map[string]interface{}{"message_id": messageID})
+}
+
+// GetMessage loads a single message (used by forward).
+func (s *ConversationService) GetMessage(ctx context.Context, tenantID, messageID string) (*entity.Message, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid message id: %w", err)
+	}
+	var m *entity.Message
+	err = s.messageRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
+		m, err = s.messageRepo.FindByID(txCtx, mid)
+		return err
+	})
+	return m, err
+}
+
+func (s *ConversationService) TotalUnread(ctx context.Context, tenantID, agentID string) (int, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	var agentPtr *uuid.UUID
+	if agentID != "" {
+		if a, err := uuid.Parse(agentID); err == nil {
+			agentPtr = &a
+		}
+	}
+	var total int
+	err = s.conversationRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
+		total, err = s.conversationRepo.TotalUnread(txCtx, tid, agentPtr)
+		return err
+	})
+	return total, err
 }
 
 func (s *ConversationService) ListMessages(ctx context.Context, tenantID, conversationID string, limit int) ([]*entity.Message, error) {

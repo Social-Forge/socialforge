@@ -4,11 +4,14 @@ import (
 	"context"
 	"github/socialforge/internal/entity"
 	"github/socialforge/internal/helpers"
+	"github/socialforge/internal/infra/repository"
 	"github/socialforge/internal/middlewares"
 	"github/socialforge/internal/services"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -18,6 +21,14 @@ type sendMessageRequest struct {
 
 type assignRequest struct {
 	AgentID string `json:"agent_id" validate:"required,uuid4"`
+}
+
+type editMessageRequest struct {
+	Text string `json:"text" validate:"required,min=1,max=8000"`
+}
+
+type forwardMessageRequest struct {
+	TargetConversationID string `json:"target_conversation_id" validate:"required,uuid4"`
 }
 
 type ConversationHandler struct {
@@ -97,6 +108,91 @@ func (h *ConversationHandler) Assign(c fiber.Ctx) error {
 func (h *ConversationHandler) Unassign(c fiber.Ctx) error {
 	return h.action(c, "Conversation unassigned", h.convSvc.Unassign)
 }
+
+// --- Message actions ---
+
+func (h *ConversationHandler) PinMessage(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	if err := h.convSvc.SetMessagePinned(ctx, tenantID, c.Params("id"), c.Params("messageId"), true); err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Message pinned", nil)
+}
+
+func (h *ConversationHandler) UnpinMessage(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	if err := h.convSvc.SetMessagePinned(ctx, tenantID, c.Params("id"), c.Params("messageId"), false); err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Message unpinned", nil)
+}
+
+func (h *ConversationHandler) EditMessage(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	var req editMessageRequest
+	if err := c.Bind().Body(&req); err != nil {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Invalid request payload", nil)
+	}
+	if errs := helpers.ValidateStruct(req); len(errs) > 0 {
+		return helpers.Respond(c, fiber.StatusBadRequest, helpers.ValidationErrors{Errors: errs}.Error(), nil)
+	}
+	msg, err := h.convSvc.EditMessage(ctx, tenantID, c.Params("id"), c.Params("messageId"), req.Text)
+	if err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Message edited", msg)
+}
+
+func (h *ConversationHandler) DeleteMessage(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	if err := h.convSvc.DeleteMessage(ctx, tenantID, c.Params("id"), c.Params("messageId")); err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Message deleted", nil)
+}
+
+func (h *ConversationHandler) ForwardMessage(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	agentID, _ := c.Locals("user_id").(string)
+
+	var req forwardMessageRequest
+	if err := c.Bind().Body(&req); err != nil {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Invalid request payload", nil)
+	}
+	if errs := helpers.ValidateStruct(req); len(errs) > 0 {
+		return helpers.Respond(c, fiber.StatusBadRequest, helpers.ValidationErrors{Errors: errs}.Error(), nil)
+	}
+
+	src, err := h.convSvc.GetMessage(ctx, tenantID, c.Params("messageId"))
+	if err != nil {
+		return helpers.Respond(c, fiber.StatusNotFound, err.Error(), nil)
+	}
+	msg, err := h.outbound.SendText(ctx, tenantID, req.TargetConversationID, agentID, src.Body.String)
+	if err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusCreated, "Message forwarded", msg)
+}
 func (h *ConversationHandler) Complete(c fiber.Ctx) error {
 	return h.action(c, "Conversation marked completed", h.convSvc.Complete)
 }
@@ -125,11 +221,59 @@ func (h *ConversationHandler) List(c fiber.Ctx) error {
 	if !ok {
 		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
 	}
-	convs, err := h.convSvc.List(ctx, tenantID, c.Query("status"), c.Query("agent_id"))
+
+	f := repository.ConversationListFilter{
+		Status: c.Query("status"),
+		Search: c.Query("search"),
+	}
+	if v := c.Query("channel_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			f.ChannelID = &id
+		}
+	}
+	if v := c.Query("agent_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			f.AgentID = &id
+		}
+	}
+	if v := c.Query("label_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			f.LabelID = &id
+		}
+	}
+	if v := c.Query("archived"); v != "" {
+		b := v == "true" || v == "1"
+		f.Archived = &b
+	}
+	if v := c.Query("date_from"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			f.DateFrom = t
+		}
+	}
+	if v := c.Query("date_to"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			f.DateTo = t
+		}
+	}
+
+	convs, err := h.convSvc.List(ctx, tenantID, f)
 	if err != nil {
 		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
 	}
 	return helpers.Respond(c, fiber.StatusOK, "Conversations retrieved successfully", convs)
+}
+
+func (h *ConversationHandler) Unread(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	total, err := h.convSvc.TotalUnread(ctx, tenantID, c.Query("agent_id"))
+	if err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Unread total retrieved", fiber.Map{"total_unread": total})
 }
 
 func (h *ConversationHandler) ListMessages(c fiber.Ctx) error {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github/socialforge/internal/entity"
 	"github/socialforge/internal/infra/contextpool"
+	"strings"
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
@@ -22,7 +23,8 @@ type ConversationRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.Convertation, error)
 	TouchInbound(ctx context.Context, id uuid.UUID, at time.Time) error
 	TouchOutbound(ctx context.Context, id uuid.UUID, at time.Time) error
-	List(ctx context.Context, tenantID uuid.UUID, status string, assignedAgentID *uuid.UUID) ([]*entity.Convertation, error)
+	List(ctx context.Context, tenantID uuid.UUID, f ConversationListFilter) ([]*entity.Convertation, error)
+	TotalUnread(ctx context.Context, tenantID uuid.UUID, assignedAgentID *uuid.UUID) (int, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
 	Assign(ctx context.Context, id uuid.UUID, agentID *uuid.UUID) error
 	SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error
@@ -31,6 +33,19 @@ type ConversationRepository interface {
 	// PickAgentForDivision returns the least-loaded active agent/supervisor in a
 	// division (fewest open conversations) for auto-assignment, or nil if none.
 	PickAgentForDivision(ctx context.Context, tenantID, divisionID uuid.UUID) (*uuid.UUID, error)
+}
+
+// ConversationListFilter carries the chat-list filters (channel, label, agent,
+// status, date range, search, archived).
+type ConversationListFilter struct {
+	Status     string
+	ChannelID  *uuid.UUID
+	AgentID    *uuid.UUID
+	LabelID    *uuid.UUID
+	Archived   *bool
+	Search     string
+	DateFrom   time.Time
+	DateTo     time.Time
 }
 
 type conversationRepository struct {
@@ -119,23 +134,68 @@ func (r *conversationRepository) TouchOutbound(ctx context.Context, id uuid.UUID
 	return nil
 }
 
-func (r *conversationRepository) List(ctx context.Context, tenantID uuid.UUID, status string, assignedAgentID *uuid.UUID) ([]*entity.Convertation, error) {
+func (r *conversationRepository) List(ctx context.Context, tenantID uuid.UUID, f ConversationListFilter) ([]*entity.Convertation, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	conds := []string{"c.tenant_id = $1"}
+	args := []interface{}{tenantID}
+	add := func(cond string, val interface{}) {
+		args = append(args, val)
+		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+
+	if f.Status != "" {
+		add("c.status = $%d", f.Status)
+	}
+	if f.ChannelID != nil {
+		add("c.channel_id = $%d", *f.ChannelID)
+	}
+	if f.AgentID != nil {
+		add("c.assigned_agent_id = $%d", *f.AgentID)
+	}
+	if f.Archived != nil {
+		add("c.is_archived = $%d", *f.Archived)
+	}
+	if f.LabelID != nil {
+		add("EXISTS (SELECT 1 FROM conversation_labels cl WHERE cl.conversation_id = c.id AND cl.label_id = $%d)", *f.LabelID)
+	}
+	if !f.DateFrom.IsZero() {
+		add("COALESCE(c.last_message_at, c.created_at) >= $%d", f.DateFrom)
+	}
+	if !f.DateTo.IsZero() {
+		add("COALESCE(c.last_message_at, c.created_at) <= $%d", f.DateTo)
+	}
+	if f.Search != "" {
+		args = append(args, "%"+f.Search+"%")
+		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM contacts ct WHERE ct.id = c.contact_id AND (ct.display_name ILIKE $%d OR ct.external_id ILIKE $%d))", len(args), len(args)))
+	}
+
+	query := "SELECT c.* FROM conversations c WHERE " + strings.Join(conds, " AND ") +
+		" ORDER BY c.is_pinned DESC, COALESCE(c.last_message_at, c.created_at) DESC LIMIT 200"
+
+	var convs []*entity.Convertation
+	if err := pgxscan.Select(subCtx, r.q(subCtx), &convs, query, args...); err != nil {
+		return nil, fmt.Errorf("failed to list conversations: %w", err)
+	}
+	return convs, nil
+}
+
+// TotalUnread returns the sum of unread counts (optionally scoped to one agent)
+// for the sidebar badge.
+func (r *conversationRepository) TotalUnread(ctx context.Context, tenantID uuid.UUID, assignedAgentID *uuid.UUID) (int, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
 	query := `
-		SELECT * FROM conversations
-		WHERE tenant_id = $1
-			AND ($2 = '' OR status = $2)
-			AND ($3::uuid IS NULL OR assigned_agent_id = $3)
-		ORDER BY COALESCE(last_message_at, created_at) DESC
-		LIMIT 200`
-
-	var convs []*entity.Convertation
-	if err := pgxscan.Select(subCtx, r.q(subCtx), &convs, query, tenantID, status, assignedAgentID); err != nil {
-		return nil, fmt.Errorf("failed to list conversations: %w", err)
+		SELECT COALESCE(SUM(unread_count), 0) FROM conversations
+		WHERE tenant_id = $1 AND is_archived = false
+			AND ($2::uuid IS NULL OR assigned_agent_id = $2)`
+	var total int
+	if err := r.q(subCtx).QueryRow(subCtx, query, tenantID, assignedAgentID).Scan(&total); err != nil {
+		return 0, fmt.Errorf("failed to count unread: %w", err)
 	}
-	return convs, nil
+	return total, nil
 }
 
 func (r *conversationRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status string) error {

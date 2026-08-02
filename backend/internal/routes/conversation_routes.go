@@ -37,8 +37,16 @@ func (r *ConversationRoutes) RegisterRoutes(parent fiber.Router) {
 	protected.Use(r.auth.JWTAuth(), r.tenant.TenantGuard())
 
 	protected.Get("/", r.handler.List)
+	protected.Get("/unread", r.handler.Unread)
 	protected.Get("/:id/messages", r.handler.ListMessages)
 	protected.Post("/:id/messages", r.handler.SendMessage)
+
+	// Message actions
+	protected.Post("/:id/messages/:messageId/pin", r.handler.PinMessage)
+	protected.Post("/:id/messages/:messageId/unpin", r.handler.UnpinMessage)
+	protected.Put("/:id/messages/:messageId", r.handler.EditMessage)
+	protected.Delete("/:id/messages/:messageId", r.handler.DeleteMessage)
+	protected.Post("/:id/messages/:messageId/forward", r.handler.ForwardMessage)
 
 	// Conversation actions
 	protected.Post("/:id/assign", r.handler.Assign)

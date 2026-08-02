@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { MobileDialogTutorial } from '$lib/components/app/integration/index.js';
 	import { localizeHref } from '$lib/paraglide/runtime.js';
 	import { Plus, Crown, User, Rocket, ArrowLeft } from '@lucide/svelte';
 
@@ -42,11 +43,7 @@
 								</Button>
 								<div class="text-xl font-medium capitalize">{currentChannelName()}</div>
 							</div>
-							<div
-								class="flex w-full cursor-pointer justify-end font-medium text-primary lg:hidden"
-							>
-								Tutorial
-							</div>
+							<MobileDialogTutorial type={data.slug} />
 						</div>
 						<div class="mb-5 text-sm text-muted-foreground">
 							<span>

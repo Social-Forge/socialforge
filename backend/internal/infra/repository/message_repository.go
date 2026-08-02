@@ -22,6 +22,9 @@ type MessageRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.Message, error)
 	ListByConversation(ctx context.Context, conversationID uuid.UUID, limit int) ([]*entity.Message, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string, errMsg string) error
+	SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error
+	EditBody(ctx context.Context, id uuid.UUID, body string) (*entity.Message, error)
+	SoftDelete(ctx context.Context, id uuid.UUID) error
 }
 
 type messageRepository struct {
@@ -96,6 +99,50 @@ func (r *messageRepository) ListByConversation(ctx context.Context, conversation
 		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}
 	return messages, nil
+}
+
+func (r *messageRepository) SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tag, err := r.q(subCtx).Exec(subCtx, `UPDATE messages SET is_pinned = $1 WHERE id = $2 AND deleted_at IS NULL`, pinned, id)
+	if err != nil {
+		return fmt.Errorf("failed to set message pinned: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("message not found")
+	}
+	return nil
+}
+
+func (r *messageRepository) EditBody(ctx context.Context, id uuid.UUID, body string) (*entity.Message, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	query := `UPDATE messages SET body = $1, edited_at = now() WHERE id = $2 AND deleted_at IS NULL
+		RETURNING id, tenant_id, conversation_id, direction, sender_type, content_type, body, status, is_pinned, edited_at, created_at, updated_at`
+	var m entity.Message
+	err := r.q(subCtx).QueryRow(subCtx, query, body, id).Scan(
+		&m.ID, &m.TenantID, &m.ConversationID, &m.Direction, &m.SenderType, &m.ContentType,
+		&m.Body, &m.Status, &m.IsPinned, &m.EditedAt, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("message not found")
+		}
+		return nil, fmt.Errorf("failed to edit message: %w", err)
+	}
+	return &m, nil
+}
+
+func (r *messageRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tag, err := r.q(subCtx).Exec(subCtx, `UPDATE messages SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete message: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("message not found")
+	}
+	return nil
 }
 
 func (r *messageRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status, errMsg string) error {
