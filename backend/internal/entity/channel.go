@@ -14,6 +14,8 @@ const (
 	ChannelTypeMessenger    = "messenger"
 	ChannelTypeInstagram    = "instagram"
 	ChannelTypeTelegram     = "telegram"
+	ChannelTypeWebchat      = "webchat"
+	ChannelTypeLinkchat     = "linkchat"
 )
 
 const (

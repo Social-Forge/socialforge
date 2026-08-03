@@ -53,6 +53,8 @@ type IngestionService struct {
 	conversationRepo repository.ConversationRepository
 	messageRepo      repository.MessageRepository
 	webhookEventRepo repository.WebhookEventRepository
+	autoResponseRepo repository.AutoResponseRepository
+	outbound         *OutboundService
 	centrifugo       *centrifugo.CentrifugoClient
 	rabbit           *rabbitmq.Client
 	logger           *zap.Logger
@@ -64,6 +66,8 @@ func NewIngestionService(
 	conversationRepo repository.ConversationRepository,
 	messageRepo repository.MessageRepository,
 	webhookEventRepo repository.WebhookEventRepository,
+	autoResponseRepo repository.AutoResponseRepository,
+	outbound *OutboundService,
 	centrifugoClient *centrifugo.CentrifugoClient,
 	rabbit *rabbitmq.Client,
 	logger *zap.Logger,
@@ -74,6 +78,8 @@ func NewIngestionService(
 		conversationRepo: conversationRepo,
 		messageRepo:      messageRepo,
 		webhookEventRepo: webhookEventRepo,
+		autoResponseRepo: autoResponseRepo,
+		outbound:         outbound,
 		centrifugo:       centrifugoClient,
 		rabbit:           rabbit,
 		logger:           logger,
@@ -187,7 +193,7 @@ func (s *IngestionService) processMessage(ctx context.Context, channel *entity.C
 
 	var conv *entity.Convertation
 	var msg *entity.Message
-	var duplicate, msgInserted bool
+	var duplicate, msgInserted, contactCreated bool
 
 	// Dedup + persistence in ONE tenant transaction: if anything fails the whole
 	// unit (including the webhook_events row) rolls back, so a provider retry
@@ -203,7 +209,7 @@ func (s *IngestionService) processMessage(ctx context.Context, channel *entity.C
 			return nil
 		}
 
-		contact, err := s.contactRepo.FindOrCreate(txCtx, &entity.Contact{
+		contact, created, err := s.contactRepo.FindOrCreate(txCtx, &entity.Contact{
 			TenantID:    channel.TenantID,
 			ChannelID:   channel.ID,
 			ExternalID:  env.Contact.ExternalID,
@@ -213,6 +219,7 @@ func (s *IngestionService) processMessage(ctx context.Context, channel *entity.C
 		if err != nil {
 			return err
 		}
+		contactCreated = created
 
 		conv, err = s.conversationRepo.FindOrCreateOpen(txCtx, channel.TenantID, channel.ID, contact.ID)
 		if err != nil {
@@ -262,7 +269,111 @@ func (s *IngestionService) processMessage(ctx context.Context, channel *entity.C
 	if msgInserted {
 		s.publishRealtime(subCtx, channel, conv, msg)
 	}
+
+	// First-reply auto-response: only for a brand-new contact, and only when no
+	// AI agent is active on the channel (AI overrides the static auto-response).
+	if contactCreated && msgInserted && channel.AIAgentID == nil {
+		s.maybeAutoRespond(subCtx, channel, conv.ID)
+	}
 	return nil
+}
+
+// IngestWebchat handles an inbound message from a webchat widget visitor. The
+// visitorID acts as the contact external id. Reuses the same persistence +
+// realtime + auto-assign + auto-response pipeline as provider webhooks.
+func (s *IngestionService) IngestWebchat(ctx context.Context, channelIDStr, visitorID, name, text string) (string, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 20*time.Second)
+	defer cancel()
+
+	channelID, err := uuid.Parse(channelIDStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid channel id: %w", err)
+	}
+	channel, err := s.channelRepo.FindByID(subCtx, channelID)
+	if err != nil {
+		return "", fmt.Errorf("channel not found: %w", err)
+	}
+	if channel.Type != entity.ChannelTypeWebchat {
+		return "", fmt.Errorf("channel is not a webchat channel")
+	}
+	if name == "" {
+		name = "Website Visitor"
+	}
+
+	var conv *entity.Convertation
+	var msg *entity.Message
+	var contactCreated, msgInserted bool
+
+	tctx := repository.WithTenantID(subCtx, channel.TenantID)
+	err = s.contactRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
+		contact, created, err := s.contactRepo.FindOrCreate(txCtx, &entity.Contact{
+			TenantID:    channel.TenantID,
+			ChannelID:   channel.ID,
+			ExternalID:  visitorID,
+			DisplayName: name,
+		})
+		if err != nil {
+			return err
+		}
+		contactCreated = created
+
+		conv, err = s.conversationRepo.FindOrCreateOpen(txCtx, channel.TenantID, channel.ID, contact.ID)
+		if err != nil {
+			return err
+		}
+		if conv.AssignedAgentID == nil {
+			if agentID, err := s.conversationRepo.PickAgentForDivision(txCtx, channel.TenantID, channel.DivisionID); err == nil && agentID != nil {
+				_ = s.conversationRepo.Assign(txCtx, conv.ID, agentID)
+			}
+		}
+
+		msg = &entity.Message{
+			TenantID:       channel.TenantID,
+			ConversationID: conv.ID,
+			Direction:      entity.MessageDirectionIn,
+			SenderType:     entity.SenderTypeContact,
+			ContentType:    entity.ContentTypeText,
+			Body:           entity.NewNullString(text),
+			Status:         entity.MessageStatusDelivered,
+		}
+		msgInserted, err = s.messageRepo.Create(txCtx, msg)
+		if err != nil {
+			return err
+		}
+		if msgInserted {
+			return s.conversationRepo.TouchInbound(txCtx, conv.ID, time.Now())
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to ingest webchat message: %w", err)
+	}
+
+	if msgInserted {
+		s.publishRealtime(subCtx, channel, conv, msg)
+	}
+	if contactCreated && msgInserted && channel.AIAgentID == nil {
+		s.maybeAutoRespond(subCtx, channel, conv.ID)
+	}
+	return conv.ID.String(), nil
+}
+
+func (s *IngestionService) maybeAutoRespond(ctx context.Context, channel *entity.Channel, conversationID uuid.UUID) {
+	if s.autoResponseRepo == nil || s.outbound == nil {
+		return
+	}
+	var ar *entity.AutoResponse
+	err := s.autoResponseRepo.RunInTenantTx(repository.WithTenantID(ctx, channel.TenantID), func(txCtx context.Context) error {
+		var err error
+		ar, err = s.autoResponseRepo.GetByChannel(txCtx, channel.ID)
+		return err
+	})
+	if err != nil || ar == nil || !ar.IsEnabled || !ar.Body.Valid || ar.Body.String == "" {
+		return
+	}
+	if _, err := s.outbound.SendSystemText(ctx, channel.TenantID, conversationID, ar.Body.String); err != nil {
+		s.logger.Warn("failed to send auto-response", zap.Error(err))
+	}
 }
 
 func (s *IngestionService) publishRealtime(ctx context.Context, channel *entity.Channel, conv *entity.Convertation, msg *entity.Message) {

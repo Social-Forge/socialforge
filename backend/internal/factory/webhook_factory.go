@@ -19,12 +19,25 @@ func NewWebhookFactory(
 	cont *dependencies.Container,
 	mw *MiddlewareFactory,
 ) *WebhookFactory {
+	outbound := services.NewOutboundService(
+		cont.ConversationRepo,
+		cont.MessageRepo,
+		cont.MessageOutboxRepo,
+		cont.ChannelRepo,
+		cont.ContactRepo,
+		cont.CentrifugoClient,
+		cont.RabbitMQ,
+		services.BuildSenders(cont.Config),
+		cont.Logger,
+	)
 	service := services.NewIngestionService(
 		cont.ChannelRepo,
 		cont.ContactRepo,
 		cont.ConversationRepo,
 		cont.MessageRepo,
 		cont.WebhookEventRepo,
+		cont.AutoResponseRepo,
+		outbound,
 		cont.CentrifugoClient,
 		cont.RabbitMQ,
 		cont.Logger,

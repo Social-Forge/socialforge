@@ -20,6 +20,8 @@ type DivisionRepository interface {
 	Create(ctx context.Context, division *entity.Division) error
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.Division, error)
 	FindBySlug(ctx context.Context, tenantID uuid.UUID, slug string) (*entity.Division, error)
+	// FindByLinkURL resolves a division by its public link token (linkchat).
+	FindByLinkURL(ctx context.Context, linkURL string) (*entity.Division, error)
 	GetUserDivisions(ctx context.Context, userTenantID uuid.UUID) ([]*entity.Division, error)
 	GetDivisionMembers(ctx context.Context, divisionID uuid.UUID) ([]*entity.DivisionMember, error)
 	AddMember(ctx context.Context, member *entity.DivisionMember) error
@@ -153,6 +155,23 @@ func (r *divisionRepository) FindBySlug(ctx context.Context, tenantID uuid.UUID,
 	}
 	return &division, nil
 }
+func (r *divisionRepository) FindByLinkURL(ctx context.Context, linkURL string) (*entity.Division, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	// Public lookup by unique link token (works as superuser in dev; prod needs
+	// a SECURITY DEFINER function since divisions is RLS-forced).
+	query := `SELECT * FROM divisions WHERE link_url = $1 AND is_active = true AND deleted_at IS NULL`
+	var division entity.Division
+	if err := pgxscan.Get(subCtx, r.q(subCtx), &division, query, linkURL); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("link not found")
+		}
+		return nil, fmt.Errorf("failed to resolve link: %w", err)
+	}
+	return &division, nil
+}
+
 func (r *divisionRepository) GetUserDivisions(ctx context.Context, userTenantID uuid.UUID) ([]*entity.Division, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()

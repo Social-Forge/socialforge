@@ -43,4 +43,13 @@ func RegisterApiRoutes(router fiber.Router, cont *dependencies.Container, mw *fa
 
 	quickReplyFactory := factory.NewQuickReplyFactory(cont, mw)
 	quickReplyFactory.GetRoutes(router)
+
+	workingHoursFactory := factory.NewWorkingHoursFactory(cont, mw)
+	workingHoursFactory.GetRoutes(router)
+
+	linkchatFactory := factory.NewLinkchatFactory(cont, mw)
+	linkchatFactory.GetRoutes(router)
+
+	webchatFactory := factory.NewWebchatFactory(cont, mw)
+	webchatFactory.GetRoutes(router)
 }

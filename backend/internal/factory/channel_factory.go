@@ -23,6 +23,7 @@ func NewChannelFactory(
 		cont.ChannelRepo,
 		cont.DivisionRepo,
 		cont.TenantRepo,
+		cont.AutoResponseRepo,
 		services.BuildConnectors(cont.Config),
 		cont.Config.App.URL,
 		"",

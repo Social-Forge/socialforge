@@ -17,19 +17,21 @@ import (
 )
 
 type ChannelService struct {
-	channelRepo  repository.ChannelRepository
-	divisionRepo repository.DivisionRepository
-	tenantRepo   repository.TenantRepository
-	connectors   map[string]channels.Connector
-	appURL       string // public base URL for provider webhooks (Telegram, Meta)
-	internalURL  string // in-network base URL for WAHA -> backend webhooks
-	logger       *zap.Logger
+	channelRepo      repository.ChannelRepository
+	divisionRepo     repository.DivisionRepository
+	tenantRepo       repository.TenantRepository
+	autoResponseRepo repository.AutoResponseRepository
+	connectors       map[string]channels.Connector
+	appURL           string // public base URL for provider webhooks (Telegram, Meta)
+	internalURL      string // in-network base URL for WAHA -> backend webhooks
+	logger           *zap.Logger
 }
 
 func NewChannelService(
 	channelRepo repository.ChannelRepository,
 	divisionRepo repository.DivisionRepository,
 	tenantRepo repository.TenantRepository,
+	autoResponseRepo repository.AutoResponseRepository,
 	connectors map[string]channels.Connector,
 	appURL, internalURL string,
 	logger *zap.Logger,
@@ -38,14 +40,71 @@ func NewChannelService(
 		internalURL = "http://backend:8080"
 	}
 	return &ChannelService{
-		channelRepo:  channelRepo,
-		divisionRepo: divisionRepo,
-		tenantRepo:   tenantRepo,
-		connectors:   connectors,
-		appURL:       appURL,
-		internalURL:  internalURL,
-		logger:       logger,
+		channelRepo:      channelRepo,
+		divisionRepo:     divisionRepo,
+		tenantRepo:       tenantRepo,
+		autoResponseRepo: autoResponseRepo,
+		connectors:       connectors,
+		appURL:           appURL,
+		internalURL:      internalURL,
+		logger:           logger,
 	}
+}
+
+// GetAutoResponse returns the channel's auto-response config (nil if unset).
+func (s *ChannelService) GetAutoResponse(ctx context.Context, tenantID, channelID string) (*entity.AutoResponse, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	cid, err := uuid.Parse(channelID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid channel id: %w", err)
+	}
+	var ar *entity.AutoResponse
+	err = s.autoResponseRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
+		ar, err = s.autoResponseRepo.GetByChannel(txCtx, cid)
+		return err
+	})
+	return ar, err
+}
+
+// SetAutoResponse upserts the channel's auto-response config.
+func (s *ChannelService) SetAutoResponse(ctx context.Context, tenantID, channelID string, req *dto.SetAutoResponseRequest) (*entity.AutoResponse, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	cid, err := uuid.Parse(channelID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid channel id: %w", err)
+	}
+	ct := req.ContentType
+	if ct == "" {
+		ct = entity.QuickReplyTypeText
+	}
+	ar := &entity.AutoResponse{
+		TenantID:    tid,
+		ChannelID:   cid,
+		IsEnabled:   req.IsEnabled,
+		ContentType: ct,
+		Body:        entity.NewNullString(req.Body),
+		Media:       entity.QuickReplyMedia(req.Media),
+	}
+	var out *entity.AutoResponse
+	err = s.channelRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
+		// Ensure the channel exists in this tenant.
+		if _, err := s.channelRepo.FindByID(txCtx, cid); err != nil {
+			return err
+		}
+		out, err = s.autoResponseRepo.Upsert(txCtx, ar)
+		return err
+	})
+	return out, err
 }
 
 // Connect registers the channel with its provider (webhook + session) and
@@ -118,6 +177,10 @@ func channelQuota(t *entity.Tenant, channelType string) (int, bool) {
 		return t.MaxInstagram, true
 	case entity.ChannelTypeTelegram:
 		return t.MaxTelegram, true
+	case entity.ChannelTypeWebchat:
+		return t.MaxWebChat, true
+	case entity.ChannelTypeLinkchat:
+		return t.MaxLinkChat, true
 	default:
 		return 0, false
 	}

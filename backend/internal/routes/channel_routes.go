@@ -42,4 +42,6 @@ func (r *ChannelRoutes) RegisterRoutes(parent fiber.Router) {
 	protected.Put("/:id", r.handler.Update)
 	protected.Delete("/:id", r.handler.Delete)
 	protected.Post("/:id/connect", r.handler.Connect)
+	protected.Get("/:id/auto-response", r.handler.GetAutoResponse)
+	protected.Put("/:id/auto-response", r.handler.SetAutoResponse)
 }

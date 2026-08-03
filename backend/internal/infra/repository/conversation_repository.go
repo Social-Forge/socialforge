@@ -271,6 +271,15 @@ func (r *conversationRepository) PickAgentForDivision(ctx context.Context, tenan
 		LEFT JOIN conversations c ON c.assigned_agent_id = ut.user_id
 			AND c.tenant_id = $1 AND c.status = 'open' AND c.is_archived = false
 		WHERE dm.division_id = $2 AND dm.is_active = true AND dm.deleted_at IS NULL
+			AND (
+				NOT EXISTS (SELECT 1 FROM agent_working_hours wh WHERE wh.user_id = ut.user_id AND wh.is_active = true)
+				OR EXISTS (
+					SELECT 1 FROM agent_working_hours wh
+					WHERE wh.user_id = ut.user_id AND wh.is_active = true
+						AND wh.day_of_week = EXTRACT(DOW FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int
+						AND (now() AT TIME ZONE 'Asia/Jakarta')::time BETWEEN wh.start_time AND wh.end_time
+				)
+			)
 		GROUP BY ut.user_id
 		ORDER BY COUNT(c.id) ASC, random()
 		LIMIT 1`

@@ -61,10 +61,8 @@ func NewOutboundService(
 // SendText persists an outbound agent text message, records it in the outbox,
 // publishes it to the conversation in realtime (optimistic), and enqueues it
 // for provider delivery by the worker.
+// SendText sends an agent's outbound text to a conversation.
 func (s *OutboundService) SendText(ctx context.Context, tenantID, conversationID, agentUserID, text string) (*entity.Message, error) {
-	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
-	defer cancel()
-
 	tid, err := uuid.Parse(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid tenant id: %w", err)
@@ -79,20 +77,32 @@ func (s *OutboundService) SendText(ctx context.Context, tenantID, conversationID
 			senderID = &aid
 		}
 	}
+	return s.sendText(ctx, tid, cid, senderID, entity.SenderTypeAgent, text)
+}
 
+// SendSystemText sends an automated system text (auto-response / first reply).
+func (s *OutboundService) SendSystemText(ctx context.Context, tenantID uuid.UUID, conversationID uuid.UUID, text string) (*entity.Message, error) {
+	return s.sendText(ctx, tenantID, conversationID, nil, entity.SenderTypeSystem, text)
+}
+
+func (s *OutboundService) sendText(ctx context.Context, tid, cid uuid.UUID, senderID *uuid.UUID, senderType, text string) (*entity.Message, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	tenantID := tid.String()
 	msg := &entity.Message{
 		TenantID:       tid,
 		ConversationID: cid,
 		SenderID:       senderID,
 		Direction:      entity.MessageDirectionOut,
-		SenderType:     entity.SenderTypeAgent,
+		SenderType:     senderType,
 		ContentType:    entity.ContentTypeText,
 		Body:           entity.NewNullString(text),
 		Status:         entity.MessageStatusPending,
 	}
 
 	tctx := repository.WithTenantID(subCtx, tid)
-	err = s.conversationRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
+	err := s.conversationRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
 		conv, err := s.conversationRepo.FindByID(txCtx, cid)
 		if err != nil {
 			return err

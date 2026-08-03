@@ -51,6 +51,8 @@ type Container struct {
 	WebhookEventRepo repository.WebhookEventRepository
 	LabelRepo        repository.LabelRepository
 	QuickReplyRepo   repository.QuickReplyRepository
+	AutoResponseRepo repository.AutoResponseRepository
+	WorkingHoursRepo repository.AgentWorkingHoursRepository
 	UserHelper       *helpers.UserHelper
 	TokenHelper      *helpers.TokenHelper
 	TenantHelper     *helpers.TenantHelper
@@ -136,6 +138,8 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	webhookEventRepo := repository.NewWebhookEventRepository(dbPool.Pool)
 	labelRepo := repository.NewLabelRepository(dbPool.Pool)
 	quickReplyRepo := repository.NewQuickReplyRepository(dbPool.Pool)
+	autoResponseRepo := repository.NewAutoResponseRepository(dbPool.Pool)
+	workingHoursRepo := repository.NewAgentWorkingHoursRepository(dbPool.Pool)
 
 	userHelper := helpers.NewUserHelper(redis, userRepo)
 	tokenHelper := helpers.NewTokenHelper(redis)
@@ -182,6 +186,8 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		WebhookEventRepo: webhookEventRepo,
 		LabelRepo:        labelRepo,
 		QuickReplyRepo:   quickReplyRepo,
+		AutoResponseRepo: autoResponseRepo,
+		WorkingHoursRepo: workingHoursRepo,
 		UserHelper:       userHelper,
 		TokenHelper:      tokenHelper,
 		TenantHelper:     tenantHelper,

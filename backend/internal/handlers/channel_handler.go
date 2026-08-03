@@ -119,6 +119,42 @@ func (h *ChannelHandler) Update(c fiber.Ctx) error {
 	return helpers.Respond(c, fiber.StatusOK, "Channel updated successfully", channel)
 }
 
+func (h *ChannelHandler) GetAutoResponse(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	ar, err := h.service.GetAutoResponse(ctx, tenantID, c.Params("id"))
+	if err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Auto-response retrieved", ar)
+}
+
+func (h *ChannelHandler) SetAutoResponse(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	tenantID, ok := h.tenantID(c)
+	if !ok {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
+	}
+	if !h.isOwner(c) {
+		return helpers.Respond(c, fiber.StatusForbidden, "Only the tenant owner can set auto-response", nil)
+	}
+	var req dto.SetAutoResponseRequest
+	if err := c.Bind().Body(&req); err != nil {
+		return helpers.Respond(c, fiber.StatusBadRequest, "Invalid request payload", nil)
+	}
+	if errs := helpers.ValidateStruct(req); len(errs) > 0 {
+		return helpers.Respond(c, fiber.StatusBadRequest, helpers.ValidationErrors{Errors: errs}.Error(), nil)
+	}
+	ar, err := h.service.SetAutoResponse(ctx, tenantID, c.Params("id"), &req)
+	if err != nil {
+		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return helpers.Respond(c, fiber.StatusOK, "Auto-response saved", ar)
+}
+
 func (h *ChannelHandler) Connect(c fiber.Ctx) error {
 	ctx := h.ctxinject.HandlerContext(c)
 	tenantID, ok := h.tenantID(c)

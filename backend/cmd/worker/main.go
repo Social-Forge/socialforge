@@ -36,12 +36,19 @@ func main() {
 	defer cont.Close()
 
 	// Inbound ingestion consumer: persists messages + publishes realtime.
+	outboundForIngest := services.NewOutboundService(
+		cont.ConversationRepo, cont.MessageRepo, cont.MessageOutboxRepo,
+		cont.ChannelRepo, cont.ContactRepo, cont.CentrifugoClient, cont.RabbitMQ,
+		services.BuildSenders(cont.Config), cont.Logger,
+	)
 	ingestionService := services.NewIngestionService(
 		cont.ChannelRepo,
 		cont.ContactRepo,
 		cont.ConversationRepo,
 		cont.MessageRepo,
 		cont.WebhookEventRepo,
+		cont.AutoResponseRepo,
+		outboundForIngest,
 		cont.CentrifugoClient,
 		cont.RabbitMQ,
 		cont.Logger,
