@@ -85,6 +85,11 @@ func (s *OutboundService) SendSystemText(ctx context.Context, tenantID uuid.UUID
 	return s.sendText(ctx, tenantID, conversationID, nil, entity.SenderTypeSystem, text)
 }
 
+// SendAIText sends an AI-generated reply (sender_type=ai) to a conversation.
+func (s *OutboundService) SendAIText(ctx context.Context, tenantID uuid.UUID, conversationID uuid.UUID, text string) (*entity.Message, error) {
+	return s.sendText(ctx, tenantID, conversationID, nil, entity.SenderTypeAI, text)
+}
+
 func (s *OutboundService) sendText(ctx context.Context, tid, cid uuid.UUID, senderID *uuid.UUID, senderType, text string) (*entity.Message, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()

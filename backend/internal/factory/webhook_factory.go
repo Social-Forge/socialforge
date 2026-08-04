@@ -30,6 +30,14 @@ func NewWebhookFactory(
 		services.BuildSenders(cont.Config),
 		cont.Logger,
 	)
+	aiReply := services.NewAIReplyService(
+		cont.AIAgentRepo,
+		cont.MessageRepo,
+		cont.AICreditRepo,
+		cont.AIClient,
+		outbound,
+		cont.Logger,
+	)
 	service := services.NewIngestionService(
 		cont.ChannelRepo,
 		cont.ContactRepo,
@@ -38,6 +46,7 @@ func NewWebhookFactory(
 		cont.WebhookEventRepo,
 		cont.AutoResponseRepo,
 		outbound,
+		aiReply,
 		cont.CentrifugoClient,
 		cont.RabbitMQ,
 		cont.Logger,

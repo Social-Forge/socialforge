@@ -53,6 +53,11 @@ type Container struct {
 	QuickReplyRepo   repository.QuickReplyRepository
 	AutoResponseRepo repository.AutoResponseRepository
 	WorkingHoursRepo repository.AgentWorkingHoursRepository
+	AIAgentRepo      repository.AIAgentRepository
+	AICreditRepo     repository.AICreditLedgerRepository
+	AIKnowledgeRepo  repository.AIKnowledgeRepository
+	AIPlaybookRepo   repository.AIPlaybookRepository
+	AIAssetRepo      repository.AIAssetRepository
 	UserHelper       *helpers.UserHelper
 	TokenHelper      *helpers.TokenHelper
 	TenantHelper     *helpers.TenantHelper
@@ -140,6 +145,11 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	quickReplyRepo := repository.NewQuickReplyRepository(dbPool.Pool)
 	autoResponseRepo := repository.NewAutoResponseRepository(dbPool.Pool)
 	workingHoursRepo := repository.NewAgentWorkingHoursRepository(dbPool.Pool)
+	aiAgentRepo := repository.NewAIAgentRepository(dbPool.Pool)
+	aiCreditRepo := repository.NewAICreditLedgerRepository(dbPool.Pool)
+	aiKnowledgeRepo := repository.NewAIKnowledgeRepository(dbPool.Pool)
+	aiPlaybookRepo := repository.NewAIPlaybookRepository(dbPool.Pool)
+	aiAssetRepo := repository.NewAIAssetRepository(dbPool.Pool)
 
 	userHelper := helpers.NewUserHelper(redis, userRepo)
 	tokenHelper := helpers.NewTokenHelper(redis)
@@ -188,6 +198,11 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		QuickReplyRepo:   quickReplyRepo,
 		AutoResponseRepo: autoResponseRepo,
 		WorkingHoursRepo: workingHoursRepo,
+		AIAgentRepo:      aiAgentRepo,
+		AICreditRepo:     aiCreditRepo,
+		AIKnowledgeRepo:  aiKnowledgeRepo,
+		AIPlaybookRepo:   aiPlaybookRepo,
+		AIAssetRepo:      aiAssetRepo,
 		UserHelper:       userHelper,
 		TokenHelper:      tokenHelper,
 		TenantHelper:     tenantHelper,

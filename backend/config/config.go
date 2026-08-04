@@ -143,6 +143,7 @@ type AIConfig struct {
 	GeminiKey       string
 	GeminiProject   string
 	GeminiModel     string
+	OpenRouterKey   string
 }
 type EmailConfig struct {
 	SMTPHost     string
@@ -287,6 +288,7 @@ func Load() (*Config, error) {
 			GeminiKey:       getEnv("GEMINI_API_KEY", ""),
 			GeminiProject:   getEnv("GEMINI_PROJECT_ID", ""),
 			GeminiModel:     getEnv("GEMINI_MODEL", "gemini-1.5-pro-latest"),
+			OpenRouterKey:   getEnv("OPENROUTER_API_KEY", ""),
 		},
 		Email: EmailConfig{
 			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),

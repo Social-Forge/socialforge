@@ -84,6 +84,7 @@ declare global {
 		created_at: string;
 		updated_at: string;
 		deleted_at?: string;
+		user_tenants?: UserTenant[];
 	};
 	type Tenant = {
 		id: string;
@@ -164,6 +165,212 @@ declare global {
 		user_id: string;
 		provider_name: string;
 		provider_id: string;
+		created_at: string;
+		updated_at: string;
+	};
+	type Channel = {
+		id: string;
+		tenant_id: string;
+		division_id: string;
+		ai_agent_id?: string;
+		type: 'whatsapp_waha' | 'whatsapp_meta' | 'messenger' | 'instagram' | 'telegram';
+		name: string;
+		status: 'disconnected' | 'connected' | 'connecting' | 'failed';
+		external_id?: string;
+		waha_engine?: string;
+		waha_session_name?: string;
+		webhook_secret?: string;
+		credentials?: Record<string, any>;
+		settings?: Record<string, any>;
+		created_at: string;
+		updated_at: string;
+	};
+	type Contact = {
+		id: string;
+		tenant_id: string;
+		channel_id: string;
+		external_id: string;
+		display_name: string;
+		avatar_url?: string;
+		is_blocked: boolean;
+		attributes?: Record<string, any>;
+		created_at: string;
+		updated_at: string;
+	};
+	type Label = {
+		id: string;
+		tenant_id: string;
+		name: string;
+		color: string;
+		created_at: string;
+		updated_at: string;
+	};
+	type QuickReply = {
+		id: string;
+		tenant_id: string;
+		shortcut: string;
+		content_type: 'text' | 'image' | 'video' | 'document';
+		body?: string;
+		media: Record<string, any>;
+		created_at: string;
+		updated_at: string;
+	};
+	type AutoResponse = {
+		id: string;
+		tenant_id: string;
+		channel_id: string;
+		content_type: 'text' | 'image' | 'video' | 'document';
+		body?: string;
+		media: Record<string, any>;
+		created_at: string;
+		updated_at: string;
+	};
+	type AIAgent = {
+		id: string;
+		tenant_id: string;
+		name: string;
+		provider: 'claude' | 'openai' | 'google' | 'openrouter';
+		model: string;
+		system_prompt: string;
+		persona?: Record<string, any>;
+		safety?: Record<string, any>;
+		guardrails?: Record<string, any>;
+		temperature: number;
+		max_tokens: number;
+		auto_reply_enabled: boolean;
+		working_hours?: Record<string, any>;
+		is_active: boolean;
+		created_at: string;
+		updated_at: string;
+	};
+	type AgentWorkingHours = {
+		id: string;
+		tenant_id: string;
+		user_id: string;
+		day_of_week: number;
+		start_time: string;
+		end_time: string;
+		is_active: boolean;
+		created_at: string;
+		updated_at: string;
+	};
+	type AIAsset = {
+		id: string;
+		tenant_id: string;
+		ai_agent_id: string;
+		name: string;
+		type: string;
+		storage_key: string;
+		mime_type?: string;
+		size?: number;
+		description?: string;
+		created_at: string;
+		updated_at: string;
+	};
+	type AICreditLedger = {
+		id: string;
+		tenant_id: string;
+		conversation_id?: string;
+		message_id?: string;
+		delta: number;
+		balance_after: number;
+		reason: string;
+		model?: string;
+		input_tokens: number;
+		output_tokens: number;
+		cost_usd: number;
+		credit: number;
+		created_at: string;
+		updated_at: string;
+	};
+	type AIKnowledge = {
+		id: string;
+		tenant_id: string;
+		ai_agent_id: string;
+		title: string;
+		content: string;
+		token_count: number;
+		created_at: string;
+		updated_at: string;
+	};
+	type AIPlaybook = {
+		id: string;
+		tenant_id: string;
+		ai_agent_id: string;
+		name: string;
+		keywords: string[];
+		instruction: string;
+		asset_ids: string[];
+		priority: number;
+		is_active: boolean;
+		created_at: string;
+		updated_at: string;
+	};
+
+	type Convertation = {
+		id: string;
+		tenant_id: string;
+		channel_id: string;
+		contact_id: string;
+		assigned_agent_id?: string;
+		status: 'open' | 'unassigned' | 'completed' | 'archived';
+		is_pinned: boolean;
+		is_archived: boolean;
+		unread_count: number;
+		last_message_at?: string;
+		service_window_expires_at?: string;
+		metadata?: Record<string, any>;
+		created_at: string;
+		updated_at: string;
+	};
+	type ConversationLabel = {
+		id: string;
+		tenant_id: string;
+		conversation_id: string;
+		label_id: string;
+		created_at: string;
+		updated_at: string;
+	};
+	type Message = {
+		id: string;
+		tenant_id: string;
+		conversation_id: string;
+		sender_id?: string;
+		direction: 'in' | 'out';
+		sender_type: 'contact' | 'agent' | 'ai' | 'system';
+		content_type:
+			| 'text'
+			| 'image'
+			| 'video'
+			| 'audio'
+			| 'document'
+			| 'location'
+			| 'contact'
+			| 'sticker'
+			| 'button'
+			| 'list'
+			| 'template';
+		body?: string;
+		media?: Record<string, any>;
+		provider_message_id?: string;
+		status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+		reply_to_id?: string;
+		is_pinned: boolean;
+		error?: string;
+		edited_at?: string;
+		created_at: string;
+		updated_at: string;
+		deleted_at?: string;
+	};
+	type MessageOutbox = {
+		id: string;
+		tenant_id: string;
+		message_id: string;
+		status: string;
+		attempts: number;
+		max_attempts: number;
+		next_retry_at?: string;
+		last_error?: string;
 		created_at: string;
 		updated_at: string;
 	};

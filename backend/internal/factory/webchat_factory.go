@@ -20,9 +20,13 @@ func NewWebchatFactory(cont *dependencies.Container, mw *MiddlewareFactory) *Web
 		cont.ChannelRepo, cont.ContactRepo, cont.CentrifugoClient, cont.RabbitMQ,
 		services.BuildSenders(cont.Config), cont.Logger,
 	)
+	aiReply := services.NewAIReplyService(
+		cont.AIAgentRepo, cont.MessageRepo, cont.AICreditRepo,
+		cont.AIClient, outbound, cont.Logger,
+	)
 	ingestion := services.NewIngestionService(
 		cont.ChannelRepo, cont.ContactRepo, cont.ConversationRepo, cont.MessageRepo,
-		cont.WebhookEventRepo, cont.AutoResponseRepo, outbound,
+		cont.WebhookEventRepo, cont.AutoResponseRepo, outbound, aiReply,
 		cont.CentrifugoClient, cont.RabbitMQ, cont.Logger,
 	)
 	handler := handlers.NewWebchatHandler(mw.ContextMiddleware, ingestion, cont.Config.Centrifugo.WsURl, cont.Logger)

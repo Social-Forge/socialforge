@@ -11,6 +11,7 @@ import (
 	"github/socialforge/internal/entity"
 	"github/socialforge/internal/infra/centrifugo"
 	"github/socialforge/internal/infra/channels"
+	"github/socialforge/internal/infra/channels/meta"
 	"github/socialforge/internal/infra/channels/telegram"
 	"github/socialforge/internal/infra/channels/waha"
 	"github/socialforge/internal/infra/contextpool"
@@ -55,6 +56,7 @@ type IngestionService struct {
 	webhookEventRepo repository.WebhookEventRepository
 	autoResponseRepo repository.AutoResponseRepository
 	outbound         *OutboundService
+	aiReply          *AIReplyService
 	centrifugo       *centrifugo.CentrifugoClient
 	rabbit           *rabbitmq.Client
 	logger           *zap.Logger
@@ -68,6 +70,7 @@ func NewIngestionService(
 	webhookEventRepo repository.WebhookEventRepository,
 	autoResponseRepo repository.AutoResponseRepository,
 	outbound *OutboundService,
+	aiReply *AIReplyService,
 	centrifugoClient *centrifugo.CentrifugoClient,
 	rabbit *rabbitmq.Client,
 	logger *zap.Logger,
@@ -80,6 +83,7 @@ func NewIngestionService(
 		webhookEventRepo: webhookEventRepo,
 		autoResponseRepo: autoResponseRepo,
 		outbound:         outbound,
+		aiReply:          aiReply,
 		centrifugo:       centrifugoClient,
 		rabbit:           rabbit,
 		logger:           logger,
@@ -104,11 +108,7 @@ func (s *IngestionService) VerifyAndEnqueue(ctx context.Context, provider, chann
 	if want := providerForChannelType(channel.Type); want != provider {
 		return fmt.Errorf("provider %q does not match channel type %q", provider, channel.Type)
 	}
-	secret := ""
-	if channel.WebhookSecret.Valid {
-		secret = channel.WebhookSecret.String
-	}
-	if err := verifySignature(provider, secret, headers, body); err != nil {
+	if err := verifySignature(provider, channel, headers, body); err != nil {
 		return err
 	}
 
@@ -126,6 +126,31 @@ func (s *IngestionService) VerifyAndEnqueue(ctx context.Context, provider, chann
 		return s.ProcessInbound(subCtx, data)
 	}
 	return nil
+}
+
+// VerifyChallenge handles the Meta webhook verification handshake (GET). It
+// returns true when the verify_token matches the channel's configured token
+// (channel.credentials.verify_token, falling back to webhook_secret).
+func (s *IngestionService) VerifyChallenge(ctx context.Context, channelIDStr, verifyToken string) bool {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 10*time.Second)
+	defer cancel()
+
+	channelID, err := uuid.Parse(channelIDStr)
+	if err != nil {
+		return false
+	}
+	channel, err := s.channelRepo.FindByID(subCtx, channelID)
+	if err != nil {
+		return false
+	}
+	expected := ""
+	if channel.Credentials != nil {
+		expected, _ = (*channel.Credentials)["verify_token"].(string)
+	}
+	if expected == "" && channel.WebhookSecret.Valid {
+		expected = channel.WebhookSecret.String
+	}
+	return expected != "" && verifyToken == expected
 }
 
 // ProcessInbound is the worker-side consumer: it decodes the job and runs the
@@ -270,10 +295,17 @@ func (s *IngestionService) processMessage(ctx context.Context, channel *entity.C
 		s.publishRealtime(subCtx, channel, conv, msg)
 	}
 
-	// First-reply auto-response: only for a brand-new contact, and only when no
-	// AI agent is active on the channel (AI overrides the static auto-response).
-	if contactCreated && msgInserted && channel.AIAgentID == nil {
-		s.maybeAutoRespond(subCtx, channel, conv.ID)
+	// Response policy: an active AI agent replies to every inbound message;
+	// otherwise fall back to the static first-reply auto-response (new contact
+	// only). AI overrides the static auto-response.
+	if msgInserted {
+		if channel.AIAgentID != nil {
+			if s.aiReply != nil {
+				s.aiReply.GenerateAndReply(subCtx, channel, conv.ID)
+			}
+		} else if contactCreated {
+			s.maybeAutoRespond(subCtx, channel, conv.ID)
+		}
 	}
 	return nil
 }
@@ -352,8 +384,14 @@ func (s *IngestionService) IngestWebchat(ctx context.Context, channelIDStr, visi
 	if msgInserted {
 		s.publishRealtime(subCtx, channel, conv, msg)
 	}
-	if contactCreated && msgInserted && channel.AIAgentID == nil {
-		s.maybeAutoRespond(subCtx, channel, conv.ID)
+	if msgInserted {
+		if channel.AIAgentID != nil {
+			if s.aiReply != nil {
+				s.aiReply.GenerateAndReply(subCtx, channel, conv.ID)
+			}
+		} else if contactCreated {
+			s.maybeAutoRespond(subCtx, channel, conv.ID)
+		}
 	}
 	return conv.ID.String(), nil
 }
@@ -409,6 +447,8 @@ func normalize(provider string, body []byte) (*channels.Envelope, error) {
 		return waha.Normalize(body)
 	case channels.ProviderTelegram:
 		return telegram.Normalize(body)
+	case channels.ProviderMetaWA, channels.ProviderMessenger, channels.ProviderInstagram:
+		return meta.Normalize(body)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -424,11 +464,35 @@ func mediaToMap(m *channels.Media) map[string]interface{} {
 	return out
 }
 
-// verifySignature validates the webhook authenticity using the channel's
-// webhook_secret. Providers differ: Telegram sends a secret-token header, WAHA
-// signs the body with HMAC-SHA256. A plain X-Webhook-Secret header is also
-// accepted (useful for local testing and simple setups).
-func verifySignature(provider, secret string, headers map[string]string, body []byte) error {
+// verifySignature validates webhook authenticity. Telegram sends a secret-token
+// header, WAHA signs the body with HMAC-SHA256, Meta signs with the app secret
+// as X-Hub-Signature-256. A plain X-Webhook-Secret header is also accepted for
+// local testing / simple setups.
+func verifySignature(provider string, channel *entity.Channel, headers map[string]string, body []byte) error {
+	secret := ""
+	if channel.WebhookSecret.Valid {
+		secret = channel.WebhookSecret.String
+	}
+
+	switch provider {
+	case channels.ProviderMetaWA, channels.ProviderMessenger, channels.ProviderInstagram:
+		appSecret := ""
+		if channel.Credentials != nil {
+			appSecret, _ = (*channel.Credentials)["app_secret"].(string)
+		}
+		if appSecret == "" {
+			return errors.New("meta channel missing app_secret")
+		}
+		sig := headers["X-Hub-Signature-256"]
+		mac := hmac.New(sha256.New, []byte(appSecret))
+		mac.Write(body)
+		expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+		if hmacEqual(sig, expected) {
+			return nil
+		}
+		return errors.New("invalid webhook signature")
+	}
+
 	if secret == "" {
 		return errors.New("channel has no webhook secret configured")
 	}

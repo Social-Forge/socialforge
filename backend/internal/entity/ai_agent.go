@@ -12,7 +12,7 @@ type AIAgent struct {
 	ID               uuid.UUID                 `json:"id" db:"id"`
 	TenantID         uuid.UUID                 `json:"tenant_id" db:"tenant_id" validate:"required"`
 	Name             string                    `json:"name" db:"name" validate:"required"`
-	Provider         string                    `json:"provider" db:"provider" validate:"required, oneof=claude openai google"`
+	Provider         string                    `json:"provider" db:"provider" validate:"required, oneof=claude openai google openrouter"`
 	Model            string                    `json:"model" db:"model" validate:"required"`
 	SystemPrompt     string                    `json:"system_prompt" db:"system_prompt"`
 	Persona          *AiPersonaConfig          `json:"persona" db:"persona"`

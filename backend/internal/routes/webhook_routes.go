@@ -22,5 +22,6 @@ func (r *WebhookRoutes) RegisterRoutes(parent fiber.Router) {
 
 	// Public: providers post inbound events here. Authenticity is verified per
 	// channel via the webhook secret / provider signature inside the handler.
+	route.Get("/:provider/:channelId", r.handler.Verify) // Meta hub.challenge handshake
 	route.Post("/:provider/:channelId", r.handler.Receive)
 }

@@ -20,6 +20,19 @@ func NewWebhookHandler(ctxinject *middlewares.ContextMiddleware, service *servic
 	return &WebhookHandler{ctxinject: ctxinject, service: service, logger: logger}
 }
 
+// Verify handles the Meta webhook verification handshake:
+//
+//	GET /api/webhooks/:provider/:channelId?hub.mode=subscribe&hub.verify_token=..&hub.challenge=..
+//
+// It must echo hub.challenge as plain text when the token matches.
+func (h *WebhookHandler) Verify(c fiber.Ctx) error {
+	ctx := h.ctxinject.HandlerContext(c)
+	if c.Query("hub.mode") == "subscribe" && h.service.VerifyChallenge(ctx, c.Params("channelId"), c.Query("hub.verify_token")) {
+		return c.SendString(c.Query("hub.challenge"))
+	}
+	return c.SendStatus(fiber.StatusForbidden)
+}
+
 // Receive is the public inbound webhook endpoint for all providers:
 //
 //	POST /api/webhooks/:provider/:channelId
@@ -31,9 +44,10 @@ func (h *WebhookHandler) Receive(c fiber.Ctx) error {
 	body := c.Body()
 
 	headers := map[string]string{
-		"X-Webhook-Secret":                 c.Get("X-Webhook-Secret"),
-		"X-Telegram-Bot-Api-Secret-Token":  c.Get("X-Telegram-Bot-Api-Secret-Token"),
-		"X-Webhook-Hmac":                   c.Get("X-Webhook-Hmac"),
+		"X-Webhook-Secret":                c.Get("X-Webhook-Secret"),
+		"X-Telegram-Bot-Api-Secret-Token": c.Get("X-Telegram-Bot-Api-Secret-Token"),
+		"X-Webhook-Hmac":                  c.Get("X-Webhook-Hmac"),
+		"X-Hub-Signature-256":             c.Get("X-Hub-Signature-256"),
 	}
 
 	if err := h.service.VerifyAndEnqueue(ctx, provider, channelID, headers, body); err != nil {

@@ -41,6 +41,14 @@ func main() {
 		cont.ChannelRepo, cont.ContactRepo, cont.CentrifugoClient, cont.RabbitMQ,
 		services.BuildSenders(cont.Config), cont.Logger,
 	)
+	aiReplyService := services.NewAIReplyService(
+		cont.AIAgentRepo,
+		cont.MessageRepo,
+		cont.AICreditRepo,
+		cont.AIClient,
+		outboundForIngest,
+		cont.Logger,
+	)
 	ingestionService := services.NewIngestionService(
 		cont.ChannelRepo,
 		cont.ContactRepo,
@@ -49,6 +57,7 @@ func main() {
 		cont.WebhookEventRepo,
 		cont.AutoResponseRepo,
 		outboundForIngest,
+		aiReplyService,
 		cont.CentrifugoClient,
 		cont.RabbitMQ,
 		cont.Logger,
