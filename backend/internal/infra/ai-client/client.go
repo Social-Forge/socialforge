@@ -44,8 +44,8 @@ type AIResponse struct {
 func NewAIClient(cfg *config.AIConfig, logger *zap.Logger) (*AIClient, error) {
 	var initErr error
 	aiOnce.Do(func() {
-		if cfg.AnthropicKey == "" && cfg.GeminiKey == "" {
-			initErr = errors.New("at least one AI provider key is required (Anthropic or Gemini)")
+		if cfg.AnthropicKey == "" && cfg.GeminiKey == "" && cfg.OpenRouterKey == "" {
+			initErr = errors.New("at least one AI provider key is required (OpenRouter, Anthropic or Gemini)")
 			logger.Error("AI configuration missing: no API keys provided")
 			return
 		}
@@ -60,6 +60,8 @@ func NewAIClient(cfg *config.AIConfig, logger *zap.Logger) (*AIClient, error) {
 		}
 
 		logger.Info("✅ AI client initialized successfully",
+			zap.String("default_provider", cfg.DefaultProvider),
+			zap.Bool("openrouter_enabled", cfg.OpenRouterKey != ""),
 			zap.Bool("anthropic_enabled", cfg.AnthropicKey != ""),
 			zap.Bool("gemini_enabled", cfg.GeminiKey != ""),
 		)
@@ -81,34 +83,69 @@ func (ai *AIClient) IsUp() bool {
 	defer ai.mu.RUnlock()
 	return ai.isUp
 }
+// provider is a named LLM backend in the fallback chain.
+type provider struct {
+	name string
+	key  string
+	fn   func(context.Context, []Message, string) (*AIResponse, error)
+}
+
+// providerChain returns the enabled providers ordered so DefaultProvider is
+// tried first, then the rest. Only providers with a configured key are included.
+// This makes the client provider-agnostic (roadmap goal): swapping the primary
+// is a config change, not a code change.
+func (ai *AIClient) providerChain() []provider {
+	all := []provider{
+		{name: "openrouter", key: ai.config.OpenRouterKey, fn: ai.chatWithOpenRouter},
+		{name: "anthropic", key: ai.config.AnthropicKey, fn: ai.chatWithAnthropic},
+		{name: "gemini", key: ai.config.GeminiKey, fn: ai.chatWithGemini},
+	}
+	// Normalize DefaultProvider aliases to a chain name.
+	preferred := ""
+	switch ai.config.DefaultProvider {
+	case "openrouter":
+		preferred = "openrouter"
+	case "claude", "anthropic":
+		preferred = "anthropic"
+	case "google", "gemini":
+		preferred = "gemini"
+	}
+
+	chain := make([]provider, 0, len(all))
+	// Preferred first (if enabled).
+	for _, p := range all {
+		if p.name == preferred && p.key != "" {
+			chain = append(chain, p)
+		}
+	}
+	// Then the remaining enabled providers in default order.
+	for _, p := range all {
+		if p.name != preferred && p.key != "" {
+			chain = append(chain, p)
+		}
+	}
+	return chain
+}
+
 func (ai *AIClient) Chat(ctx context.Context, messages []Message, systemPrompt string) (*AIResponse, error) {
 	ctx, cancel := contextpool.WithTimeoutIfNone(ctx, 30*time.Second)
 	defer cancel()
 
-	// Try Anthropic Claude first (primary)
-	if ai.config.AnthropicKey != "" {
-		response, err := ai.chatWithAnthropic(ctx, messages, systemPrompt)
-		if err == nil {
-			return response, nil
-		}
-		ai.logger.Warn("Anthropic request failed, falling back to Gemini",
-			zap.Error(err),
-		)
+	chain := ai.providerChain()
+	if len(chain) == 0 {
+		return nil, errors.New("no AI provider available")
 	}
 
-	// Fallback to Gemini
-	if ai.config.GeminiKey != "" {
-		response, err := ai.chatWithGemini(ctx, messages, systemPrompt)
+	var lastErr error
+	for _, p := range chain {
+		resp, err := p.fn(ctx, messages, systemPrompt)
 		if err == nil {
-			return response, nil
+			return resp, nil
 		}
-		ai.logger.Error("Gemini request also failed",
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("all AI providers failed: %w", err)
+		lastErr = err
+		ai.logger.Warn("AI provider failed, trying next", zap.String("provider", p.name), zap.Error(err))
 	}
-
-	return nil, errors.New("no AI provider available")
+	return nil, fmt.Errorf("all AI providers failed: %w", lastErr)
 }
 func (ai *AIClient) GenerateAutoReply(ctx context.Context, customerMessage string, context string) (string, error) {
 	systemPrompt := `You are a helpful customer service assistant. Generate a professional and friendly response to the customer's message. 

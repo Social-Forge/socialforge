@@ -21,6 +21,7 @@ func NewAIResourceFactory(cont *dependencies.Container, mw *MiddlewareFactory) *
 		cont.AIKnowledgeRepo,
 		cont.AIPlaybookRepo,
 		cont.AIAssetRepo,
+		cont.AIClient,
 		cont.Logger,
 	)
 	handler := handlers.NewAIResourceHandler(mw.ContextMiddleware, service, cont.Logger)

@@ -144,6 +144,8 @@ type AIConfig struct {
 	GeminiProject   string
 	GeminiModel     string
 	OpenRouterKey   string
+	OpenRouterModel string
+	EmbeddingModel  string
 }
 type EmailConfig struct {
 	SMTPHost     string
@@ -289,6 +291,8 @@ func Load() (*Config, error) {
 			GeminiProject:   getEnv("GEMINI_PROJECT_ID", ""),
 			GeminiModel:     getEnv("GEMINI_MODEL", "gemini-1.5-pro-latest"),
 			OpenRouterKey:   getEnv("OPENROUTER_API_KEY", ""),
+			OpenRouterModel: getEnv("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+			EmbeddingModel:  getEnv("EMBEDDING_MODEL", "text-embedding-3-small"),
 		},
 		Email: EmailConfig{
 			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),

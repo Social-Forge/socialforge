@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github/socialforge/internal/entity"
 	"github/socialforge/internal/infra/contextpool"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
@@ -13,6 +15,25 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// vectorLiteral formats a float slice as a pgvector text literal ("[1,2,3]") so
+// it can be bound as a parameter and cast with $n::vector — avoids a pgx type
+// dependency.
+func vectorLiteral(vec []float32) string {
+	if len(vec) == 0 {
+		return "[]"
+	}
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, v := range vec {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatFloat(float64(v), 'f', -1, 32))
+	}
+	b.WriteByte(']')
+	return b.String()
+}
 
 // ============================ AI Knowledge ============================
 
@@ -23,6 +44,11 @@ type AIKnowledgeRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.AIKnowledge, error)
 	Update(ctx context.Context, k *entity.AIKnowledge) (*entity.AIKnowledge, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	// UpdateEmbedding stores the semantic vector for a knowledge row.
+	UpdateEmbedding(ctx context.Context, id uuid.UUID, vec []float32) error
+	// SearchByEmbedding returns the k nearest knowledge entries for the agent by
+	// cosine distance (only rows that have an embedding).
+	SearchByEmbedding(ctx context.Context, agentID uuid.UUID, vec []float32, k int) ([]*entity.AIKnowledge, error)
 }
 
 type aiKnowledgeRepository struct{ *baseRepository }
@@ -105,6 +131,41 @@ func (r *aiKnowledgeRepository) Delete(ctx context.Context, id uuid.UUID) error 
 		return fmt.Errorf("ai knowledge not found")
 	}
 	return nil
+}
+
+func (r *aiKnowledgeRepository) UpdateEmbedding(ctx context.Context, id uuid.UUID, vec []float32) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tag, err := r.q(subCtx).Exec(subCtx,
+		`UPDATE ai_knowledge SET embedding_vec = $1::vector WHERE id = $2`, vectorLiteral(vec), id)
+	if err != nil {
+		return fmt.Errorf("failed to update knowledge embedding: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("ai knowledge not found")
+	}
+	return nil
+}
+
+func (r *aiKnowledgeRepository) SearchByEmbedding(ctx context.Context, agentID uuid.UUID, vec []float32, k int) ([]*entity.AIKnowledge, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	if k <= 0 || k > 20 {
+		k = 3
+	}
+	var out []*entity.AIKnowledge
+	// Cosine distance (<=>) ascending = most similar first. Only rows with an
+	// embedding participate.
+	query := `
+		SELECT id, tenant_id, ai_agent_id, title, content, token_count, created_at, updated_at
+		FROM ai_knowledge
+		WHERE ai_agent_id = $1 AND embedding_vec IS NOT NULL
+		ORDER BY embedding_vec <=> $2::vector
+		LIMIT $3`
+	if err := pgxscan.Select(subCtx, r.q(subCtx), &out, query, agentID, vectorLiteral(vec), k); err != nil {
+		return nil, fmt.Errorf("failed to search knowledge by embedding: %w", err)
+	}
+	return out, nil
 }
 
 // ============================ AI Playbook ============================

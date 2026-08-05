@@ -29,6 +29,7 @@ type ConversationRepository interface {
 	Assign(ctx context.Context, id uuid.UUID, agentID *uuid.UUID) error
 	SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error
 	SetArchived(ctx context.Context, id uuid.UUID, archived bool) error
+	SetMetadata(ctx context.Context, id uuid.UUID, metadata entity.MetDataConfig) error
 	MarkRead(ctx context.Context, id uuid.UUID) error
 	// PickAgentForDivision returns the least-loaded active agent/supervisor in a
 	// division (fewest open conversations) for auto-assignment, or nil if none.
@@ -218,6 +219,19 @@ func (r *conversationRepository) SetPinned(ctx context.Context, id uuid.UUID, pi
 	tag, err := r.q(subCtx).Exec(subCtx, `UPDATE conversations SET is_pinned = $1 WHERE id = $2`, pinned, id)
 	if err != nil {
 		return fmt.Errorf("failed to set pinned: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("conversation not found")
+	}
+	return nil
+}
+
+func (r *conversationRepository) SetMetadata(ctx context.Context, id uuid.UUID, metadata entity.MetDataConfig) error {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+	tag, err := r.q(subCtx).Exec(subCtx, `UPDATE conversations SET metadata = $1 WHERE id = $2`, metadata, id)
+	if err != nil {
+		return fmt.Errorf("failed to set metadata: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("conversation not found")

@@ -364,6 +364,7 @@ func (r *tenantRepository) Update(ctx context.Context, tenant *entity.Tenant) (*
 	err := r.db.QueryRow(subCtx, query, args...).Scan(
 		&updateTenant.ID,
 		&updateTenant.Name,
+		&updateTenant.Slug,
 		&updateTenant.MaxDivisions,
 		&updateTenant.MaxAgents,
 		&updateTenant.MaxQuickReplies,

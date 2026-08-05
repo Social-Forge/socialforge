@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github/socialforge/internal/dto"
 	"github/socialforge/internal/entity"
+	aiclient "github/socialforge/internal/infra/ai-client"
 	"github/socialforge/internal/infra/contextpool"
 	"github/socialforge/internal/infra/repository"
 	"time"
@@ -17,11 +18,12 @@ import (
 // assets. Every operation is scoped to the tenant (RLS) and the parent agent,
 // and verifies the parent agent exists in the tenant before touching a child.
 type AIResourceService struct {
-	agentRepo    repository.AIAgentRepository
+	agentRepo     repository.AIAgentRepository
 	knowledgeRepo repository.AIKnowledgeRepository
-	playbookRepo repository.AIPlaybookRepository
-	assetRepo    repository.AIAssetRepository
-	logger       *zap.Logger
+	playbookRepo  repository.AIPlaybookRepository
+	assetRepo     repository.AIAssetRepository
+	aiClient      *aiclient.AIClient
+	logger        *zap.Logger
 }
 
 func NewAIResourceService(
@@ -29,14 +31,36 @@ func NewAIResourceService(
 	knowledgeRepo repository.AIKnowledgeRepository,
 	playbookRepo repository.AIPlaybookRepository,
 	assetRepo repository.AIAssetRepository,
+	aiClient *aiclient.AIClient,
 	logger *zap.Logger,
 ) *AIResourceService {
 	return &AIResourceService{
-		agentRepo:    agentRepo,
+		agentRepo:     agentRepo,
 		knowledgeRepo: knowledgeRepo,
-		playbookRepo: playbookRepo,
-		assetRepo:    assetRepo,
-		logger:       logger,
+		playbookRepo:  playbookRepo,
+		assetRepo:     assetRepo,
+		aiClient:      aiClient,
+		logger:        logger,
+	}
+}
+
+// embedKnowledge generates + stores the semantic vector for a knowledge row.
+// Best-effort: failures are logged and swallowed so knowledge CRUD still works
+// (retrieval falls back to lexical search).
+func (s *AIResourceService) embedKnowledge(ctx context.Context, tenantID uuid.UUID, k *entity.AIKnowledge) {
+	if s.aiClient == nil || !s.aiClient.EmbeddingsEnabled() {
+		return
+	}
+	vec, err := s.aiClient.Embed(ctx, k.Title+"\n"+k.Content)
+	if err != nil {
+		s.logger.Warn("knowledge embedding failed (lexical fallback remains)", zap.Error(err))
+		return
+	}
+	tctx := repository.WithTenantID(ctx, tenantID)
+	if err := s.knowledgeRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
+		return s.knowledgeRepo.UpdateEmbedding(txCtx, k.ID, vec)
+	}); err != nil {
+		s.logger.Warn("failed to store knowledge embedding", zap.Error(err))
 	}
 }
 
@@ -111,11 +135,12 @@ func (s *AIResourceService) CreateKnowledge(ctx context.Context, tenantID, agent
 	if err != nil {
 		return nil, err
 	}
+	s.embedKnowledge(tctx, tid, k)
 	return k, nil
 }
 
 func (s *AIResourceService) UpdateKnowledge(ctx context.Context, tenantID, agentID, id string, req *dto.UpdateAIKnowledgeRequest) (*entity.AIKnowledge, error) {
-	tctx, cancel, _, aid, err := s.prep(ctx, tenantID, agentID)
+	tctx, cancel, tid, aid, err := s.prep(ctx, tenantID, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +164,11 @@ func (s *AIResourceService) UpdateKnowledge(ctx context.Context, tenantID, agent
 		out, err = s.knowledgeRepo.Update(txCtx, existing)
 		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	// Content changed -> re-embed for accurate semantic retrieval.
+	s.embedKnowledge(tctx, tid, out)
 	return out, err
 }
 

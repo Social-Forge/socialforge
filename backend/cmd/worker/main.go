@@ -44,6 +44,10 @@ func main() {
 	aiReplyService := services.NewAIReplyService(
 		cont.AIAgentRepo,
 		cont.MessageRepo,
+		cont.ConversationRepo,
+		cont.AIKnowledgeRepo,
+		cont.AIPlaybookRepo,
+		cont.AIAssetRepo,
 		cont.AICreditRepo,
 		cont.AIClient,
 		outboundForIngest,
@@ -86,6 +90,12 @@ func main() {
 		}
 	}
 
+	// Billing: periodically expire ended subscriptions -> downgrade to free.
+	subscriptionService := services.NewSubscriptionService(
+		cont.SubscriptionRepo, cont.PlanRepo, cont.TenantRepo, cont.AddonRepo, cont.Logger,
+	)
+	go runSubscriptionSweep(ctx, subscriptionService, cont)
+
 	cont.Logger.Info("🛠️  Worker started — consuming jobs")
 
 	<-ctx.Done()
@@ -100,4 +110,29 @@ func main() {
 	}
 	_ = shutdownCtx
 	config.Logger.Info("Worker shut down gracefully ✅")
+}
+
+// runSubscriptionSweep runs the expiry sweep at startup and hourly thereafter.
+func runSubscriptionSweep(ctx context.Context, svc *services.SubscriptionService, cont *dependencies.Container) {
+	sweep := func() {
+		n, err := svc.SweepExpired(ctx)
+		if err != nil {
+			cont.Logger.Warn("subscription sweep failed", zap.Error(err))
+			return
+		}
+		if n > 0 {
+			cont.Logger.Info("subscription sweep completed", zap.Int("downgraded", n))
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
 }

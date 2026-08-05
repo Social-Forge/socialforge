@@ -58,6 +58,11 @@ type Container struct {
 	AIKnowledgeRepo  repository.AIKnowledgeRepository
 	AIPlaybookRepo   repository.AIPlaybookRepository
 	AIAssetRepo      repository.AIAssetRepository
+	PlanRepo         repository.PlanRepository
+	SubscriptionRepo repository.SubscriptionRepository
+	InvoiceRepo      repository.InvoiceRepository
+	PaymentEventRepo repository.PaymentEventRepository
+	AddonRepo        repository.SubscriptionAddonRepository
 	UserHelper       *helpers.UserHelper
 	TokenHelper      *helpers.TokenHelper
 	TenantHelper     *helpers.TenantHelper
@@ -150,6 +155,11 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	aiKnowledgeRepo := repository.NewAIKnowledgeRepository(dbPool.Pool)
 	aiPlaybookRepo := repository.NewAIPlaybookRepository(dbPool.Pool)
 	aiAssetRepo := repository.NewAIAssetRepository(dbPool.Pool)
+	planRepo := repository.NewPlanRepository(dbPool.Pool)
+	subscriptionRepo := repository.NewSubscriptionRepository(dbPool.Pool)
+	invoiceRepo := repository.NewInvoiceRepository(dbPool.Pool)
+	paymentEventRepo := repository.NewPaymentEventRepository(dbPool.Pool)
+	addonRepo := repository.NewSubscriptionAddonRepository(dbPool.Pool)
 
 	userHelper := helpers.NewUserHelper(redis, userRepo)
 	tokenHelper := helpers.NewTokenHelper(redis)
@@ -203,6 +213,11 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		AIKnowledgeRepo:  aiKnowledgeRepo,
 		AIPlaybookRepo:   aiPlaybookRepo,
 		AIAssetRepo:      aiAssetRepo,
+		PlanRepo:         planRepo,
+		SubscriptionRepo: subscriptionRepo,
+		InvoiceRepo:      invoiceRepo,
+		PaymentEventRepo: paymentEventRepo,
+		AddonRepo:        addonRepo,
 		UserHelper:       userHelper,
 		TokenHelper:      tokenHelper,
 		TenantHelper:     tenantHelper,

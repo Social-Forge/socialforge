@@ -23,31 +23,46 @@ const aiHistoryLimit = 20
 // inbound customer message triggers a Claude-generated response persisted and
 // dispatched as sender_type=ai, metered against the tenant's credit balance.
 type AIReplyService struct {
-	aiAgentRepo repository.AIAgentRepository
-	messageRepo repository.MessageRepository
-	creditRepo  repository.AICreditLedgerRepository
-	aiClient    *aiclient.AIClient
-	outbound    *OutboundService
-	logger      *zap.Logger
+	aiAgentRepo      repository.AIAgentRepository
+	messageRepo      repository.MessageRepository
+	conversationRepo repository.ConversationRepository
+	knowledgeRepo    repository.AIKnowledgeRepository
+	playbookRepo     repository.AIPlaybookRepository
+	assetRepo        repository.AIAssetRepository
+	creditRepo       repository.AICreditLedgerRepository
+	aiClient         *aiclient.AIClient
+	outbound         *OutboundService
+	logger           *zap.Logger
 }
 
 func NewAIReplyService(
 	aiAgentRepo repository.AIAgentRepository,
 	messageRepo repository.MessageRepository,
+	conversationRepo repository.ConversationRepository,
+	knowledgeRepo repository.AIKnowledgeRepository,
+	playbookRepo repository.AIPlaybookRepository,
+	assetRepo repository.AIAssetRepository,
 	creditRepo repository.AICreditLedgerRepository,
 	aiClient *aiclient.AIClient,
 	outbound *OutboundService,
 	logger *zap.Logger,
 ) *AIReplyService {
 	return &AIReplyService{
-		aiAgentRepo: aiAgentRepo,
-		messageRepo: messageRepo,
-		creditRepo:  creditRepo,
-		aiClient:    aiClient,
-		outbound:    outbound,
-		logger:      logger,
+		aiAgentRepo:      aiAgentRepo,
+		messageRepo:      messageRepo,
+		conversationRepo: conversationRepo,
+		knowledgeRepo:    knowledgeRepo,
+		playbookRepo:     playbookRepo,
+		assetRepo:        assetRepo,
+		creditRepo:       creditRepo,
+		aiClient:         aiClient,
+		outbound:         outbound,
+		logger:           logger,
 	}
 }
+
+// metaAIPaused is the conversation.metadata flag set on human handoff.
+const metaAIPaused = "ai_paused"
 
 // GenerateAndReply loads the channel's AI agent, builds a persona-aware prompt
 // from the recent conversation history, calls the model, and sends the reply.
@@ -62,16 +77,33 @@ func (s *AIReplyService) GenerateAndReply(ctx context.Context, channel *entity.C
 
 	tctx := repository.WithTenantID(subCtx, channel.TenantID)
 
-	// 1. Load the agent + its recent conversation history in one tenant tx.
+	// 1. Load the agent, conversation, history, playbooks, knowledge + balance in
+	// one tenant tx.
 	var agent *entity.AIAgent
+	var conv *entity.Convertation
 	var history []*entity.Message
+	var playbooks []*entity.AIPlaybook
+	var knowledge []*entity.AIKnowledge
+	var assets []*entity.AIAsset
 	var balance int
 	err := s.aiAgentRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
 		var err error
 		if agent, err = s.aiAgentRepo.FindByID(txCtx, *channel.AIAgentID); err != nil {
 			return err
 		}
+		if conv, err = s.conversationRepo.FindByID(txCtx, conversationID); err != nil {
+			return err
+		}
 		if history, err = s.messageRepo.ListByConversation(txCtx, conversationID, aiHistoryLimit); err != nil {
+			return err
+		}
+		if playbooks, err = s.playbookRepo.ListByAgent(txCtx, agent.ID); err != nil {
+			return err
+		}
+		if knowledge, err = s.knowledgeRepo.ListByAgent(txCtx, agent.ID); err != nil {
+			return err
+		}
+		if assets, err = s.assetRepo.ListByAgent(txCtx, agent.ID); err != nil {
 			return err
 		}
 		balance, err = s.creditRepo.Balance(txCtx, channel.TenantID)
@@ -83,6 +115,12 @@ func (s *AIReplyService) GenerateAndReply(ctx context.Context, channel *entity.C
 	}
 	if agent == nil || !agent.IsActive || !agent.AutoReplyEnabled {
 		return
+	}
+	// Human already took over this conversation -> AI stays silent.
+	if conv != nil && conv.Metadata != nil {
+		if paused, _ := (*conv.Metadata)[metaAIPaused].(bool); paused {
+			return
+		}
 	}
 	if balance <= 0 {
 		s.logger.Info("ai reply skipped: insufficient credits",
@@ -100,9 +138,35 @@ func (s *AIReplyService) GenerateAndReply(ctx context.Context, channel *entity.C
 	if last := msgs[len(msgs)-1]; last.Role != "user" {
 		return
 	}
+	lastMsg := strings.ToLower(msgs[len(msgs)-1].Content)
 
-	// 3. Call the model.
-	systemPrompt := buildSystemPrompt(agent)
+	// 2a. Working-hours gate: outside the agent's hours, do not auto-reply (an
+	// off-hours notice is sent once, then a human handles it during hours).
+	if !aiWithinWorkingHours(agent.WorkingHours, time.Now()) {
+		if note := workingHoursMessage(agent.WorkingHours); note != "" {
+			_, _ = s.outbound.SendSystemText(subCtx, channel.TenantID, conversationID, note)
+		}
+		s.logger.Info("ai reply skipped: outside working hours", zap.String("agent", agent.Name))
+		return
+	}
+
+	// 2b. Handoff detection: explicit request or a safety topic -> pause AI, hand
+	// to a human, and stop.
+	if reason := handoffReason(lastMsg, agent.Safety); reason != "" {
+		s.handoff(subCtx, tctx, channel, conv, conversationID, reason)
+		return
+	}
+
+	// 2c. Playbook match: highest-priority active playbook whose keyword appears
+	// in the customer's message steers the reply and attaches assets.
+	matched := matchPlaybook(playbooks, lastMsg)
+
+	// 2d. Knowledge retrieval: semantic (pgvector) when embeddings are enabled,
+	// else lexical term-overlap over the loaded rows.
+	knowledgeBlock := s.retrieveKnowledge(subCtx, tctx, agent.ID, msgs[len(msgs)-1].Content, knowledge)
+
+	// 3. Call the model with persona + knowledge + playbook context.
+	systemPrompt := buildSystemPrompt(agent) + knowledgeBlock + buildPlaybookBlock(matched, assets)
 	resp, err := s.aiClient.Chat(subCtx, msgs, systemPrompt)
 	if err != nil {
 		s.logger.Warn("ai reply: model call failed", zap.Error(err))
@@ -140,12 +204,71 @@ func (s *AIReplyService) GenerateAndReply(ctx context.Context, channel *entity.C
 		s.logger.Warn("ai reply: failed to meter credits", zap.Error(err))
 	}
 
+	playbookName := ""
+	if matched != nil {
+		playbookName = matched.Name
+	}
 	s.logger.Info("ai reply sent",
 		zap.String("agent", agent.Name),
 		zap.String("model", resp.Model),
 		zap.Int("tokens", tokens),
 		zap.Int("balance_after", entry.BalanceAfter),
+		zap.String("playbook", playbookName),
+		zap.Int("knowledge_available", len(knowledge)),
 	)
+}
+
+// retrieveKnowledge selects reference knowledge for the query: semantic search
+// via pgvector when embeddings are enabled (and rows are embedded), otherwise a
+// lexical term-overlap over the already-loaded rows.
+func (s *AIReplyService) retrieveKnowledge(ctx, tctx context.Context, agentID uuid.UUID, query string, loaded []*entity.AIKnowledge) string {
+	if s.aiClient != nil && s.aiClient.EmbeddingsEnabled() {
+		vec, err := s.aiClient.Embed(ctx, query)
+		if err != nil {
+			s.logger.Warn("query embedding failed, lexical fallback", zap.Error(err))
+		} else {
+			var hits []*entity.AIKnowledge
+			e := s.knowledgeRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
+				var err error
+				hits, err = s.knowledgeRepo.SearchByEmbedding(txCtx, agentID, vec, 3)
+				return err
+			})
+			if e == nil && len(hits) > 0 {
+				s.logger.Info("knowledge retrieval via pgvector", zap.Int("hits", len(hits)))
+				return formatKnowledgeBlock(hits)
+			}
+			if e != nil {
+				s.logger.Warn("vector search failed, lexical fallback", zap.Error(e))
+			}
+		}
+	}
+	return buildKnowledgeBlock(loaded, query)
+}
+
+// handoff pauses the AI on a conversation and hands it to a human: it flags the
+// conversation metadata (ai_paused=true), notifies the customer once, and moves
+// the conversation to unassigned so an agent picks it up.
+func (s *AIReplyService) handoff(ctx, tctx context.Context, channel *entity.Channel, conv *entity.Convertation, conversationID uuid.UUID, reason string) {
+	meta := entity.MetDataConfig{}
+	if conv != nil && conv.Metadata != nil {
+		meta = *conv.Metadata
+	}
+	meta[metaAIPaused] = true
+	meta["handoff_reason"] = reason
+	err := s.conversationRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
+		if err := s.conversationRepo.SetMetadata(txCtx, conversationID, meta); err != nil {
+			return err
+		}
+		// Leave it open for a human; unassign so it re-enters the queue.
+		return s.conversationRepo.UpdateStatus(txCtx, conversationID, entity.ConversationStatusUnassigned)
+	})
+	if err != nil {
+		s.logger.Warn("ai reply: handoff failed", zap.Error(err))
+		return
+	}
+	_, _ = s.outbound.SendSystemText(ctx, channel.TenantID, conversationID,
+		"Baik, permintaan Anda akan kami teruskan ke agen kami. Mohon tunggu sebentar ya 🙏")
+	s.logger.Info("ai reply: handed off to human", zap.String("reason", reason), zap.String("conversation_id", conversationID.String()))
 }
 
 // buildAIMessages maps persisted messages (returned newest-first) to the model's
@@ -265,4 +388,238 @@ func listValues(m map[string]interface{}) []string {
 		}
 	}
 	return out
+}
+
+// ============================ Working hours ============================
+
+// aiWithinWorkingHours reports whether `now` falls inside the agent's configured
+// hours. Config shape (all optional): {enabled, timezone, start:"HH:MM",
+// end:"HH:MM", days:[0-6]}. When disabled/unset the agent is always on.
+func aiWithinWorkingHours(wh *entity.WorkingHours, now time.Time) bool {
+	if wh == nil {
+		return true
+	}
+	m := map[string]interface{}(*wh)
+	if enabled, ok := m["enabled"].(bool); !ok || !enabled {
+		return true
+	}
+	loc := time.UTC
+	if tz, _ := m["timezone"].(string); tz != "" {
+		if l, err := time.LoadLocation(tz); err == nil {
+			loc = l
+		}
+	} else if l, err := time.LoadLocation("Asia/Jakarta"); err == nil {
+		loc = l
+	}
+	now = now.In(loc)
+
+	// Day-of-week filter (0=Sunday). Absent -> every day allowed.
+	if days, ok := m["days"].([]interface{}); ok && len(days) > 0 {
+		today := int(now.Weekday())
+		allowed := false
+		for _, d := range days {
+			if n, ok := toInt(d); ok && n == today {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return false
+		}
+	}
+
+	start := parseHHMM(firstString(m, "start"), 0)
+	end := parseHHMM(firstString(m, "end"), 24*60)
+	cur := now.Hour()*60 + now.Minute()
+	if start <= end {
+		return cur >= start && cur < end
+	}
+	// Overnight window (e.g. 20:00-06:00).
+	return cur >= start || cur < end
+}
+
+func workingHoursMessage(wh *entity.WorkingHours) string {
+	if wh == nil {
+		return ""
+	}
+	m := map[string]interface{}(*wh)
+	return firstString(m, "offhours_message")
+}
+
+func toInt(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	}
+	return 0, false
+}
+
+// parseHHMM turns "HH:MM" into minutes-since-midnight, or def on failure.
+func parseHHMM(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	var h, min int
+	if _, err := fmt.Sscanf(s, "%d:%d", &h, &min); err != nil {
+		return def
+	}
+	return h*60 + min
+}
+
+// ============================ Handoff ============================
+
+// handoffPhrases are explicit customer requests to talk to a human.
+var handoffPhrases = []string{
+	"agen manusia", "customer service manusia", "cs manusia", "bicara dengan manusia",
+	"ngomong sama manusia", "orang asli", "manusia asli", "agen asli", "human agent",
+	"talk to a human", "speak to a human", "real person", "operator",
+}
+
+// handoffReason returns a non-empty reason when the message should be escalated
+// to a human: an explicit request, or a safety topic the agent must not handle.
+func handoffReason(lastMsg string, safety *entity.AiSafetyConfig) string {
+	for _, p := range handoffPhrases {
+		if strings.Contains(lastMsg, p) {
+			return "customer_requested_human"
+		}
+	}
+	if safety != nil {
+		for _, topic := range listValues(map[string]interface{}(*safety)) {
+			t := strings.ToLower(strings.TrimSpace(topic))
+			if len(t) >= 4 && strings.Contains(lastMsg, t) {
+				return "safety_topic:" + t
+			}
+		}
+	}
+	return ""
+}
+
+// ============================ Playbook ============================
+
+// matchPlaybook returns the highest-priority active playbook whose keyword
+// appears in the customer message (playbooks arrive ordered priority DESC).
+func matchPlaybook(playbooks []*entity.AIPlaybook, lastMsg string) *entity.AIPlaybook {
+	for _, p := range playbooks {
+		if !p.IsActive {
+			continue
+		}
+		for _, kw := range p.Keywords {
+			kw = strings.ToLower(strings.TrimSpace(kw))
+			if kw != "" && strings.Contains(lastMsg, kw) {
+				return p
+			}
+		}
+	}
+	return nil
+}
+
+// buildPlaybookBlock injects the matched playbook's instruction and any attached
+// assets into the system prompt so the model follows the scripted response.
+func buildPlaybookBlock(matched *entity.AIPlaybook, assets []*entity.AIAsset) string {
+	if matched == nil {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n\nActive playbook %q — follow this instruction for your reply:\n%s\n", matched.Name, matched.Instruction)
+
+	if len(matched.AssetIDs) > 0 && len(assets) > 0 {
+		byID := make(map[string]*entity.AIAsset, len(assets))
+		for _, a := range assets {
+			byID[a.ID.String()] = a
+		}
+		var lines []string
+		for _, id := range matched.AssetIDs {
+			if a, ok := byID[id]; ok {
+				desc := a.Name
+				if a.Description.Valid && a.Description.String != "" {
+					desc += " — " + a.Description.String
+				}
+				lines = append(lines, fmt.Sprintf("%s (%s)", desc, a.Type))
+			}
+		}
+		if len(lines) > 0 {
+			b.WriteString("Offer/mention these materials when relevant:\n")
+			for _, l := range lines {
+				fmt.Fprintf(&b, "- %s\n", l)
+			}
+		}
+	}
+	return b.String()
+}
+
+// ============================ Knowledge (RAG-lite) ============================
+
+// buildKnowledgeBlock scores knowledge entries by keyword overlap with the
+// customer's message and injects the top matches as reference context. This is a
+// lightweight lexical retriever; pgvector embeddings are a deeper refinement.
+func buildKnowledgeBlock(knowledge []*entity.AIKnowledge, query string) string {
+	if len(knowledge) == 0 {
+		return ""
+	}
+	terms := queryTerms(query)
+	type scored struct {
+		k     *entity.AIKnowledge
+		score int
+	}
+	var ranked []scored
+	for _, k := range knowledge {
+		hay := strings.ToLower(k.Title + " " + k.Content)
+		score := 0
+		for t := range terms {
+			if strings.Contains(hay, t) {
+				score++
+			}
+		}
+		if score > 0 {
+			ranked = append(ranked, scored{k: k, score: score})
+		}
+	}
+	if len(ranked) == 0 {
+		return ""
+	}
+	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
+
+	top := make([]*entity.AIKnowledge, 0, 3)
+	for i, r := range ranked {
+		if i >= 3 {
+			break
+		}
+		top = append(top, r.k)
+	}
+	return formatKnowledgeBlock(top)
+}
+
+// formatKnowledgeBlock renders already-selected knowledge entries as a reference
+// block for the system prompt. Shared by lexical and vector retrieval.
+func formatKnowledgeBlock(entries []*entity.AIKnowledge) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nReference knowledge (use it to answer accurately; do not invent facts beyond it):\n")
+	for _, k := range entries {
+		content := k.Content
+		if len(content) > 600 {
+			content = content[:600] + "…"
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", k.Title, content)
+	}
+	return b.String()
+}
+
+// queryTerms extracts distinct lowercase tokens (>=4 chars) from the query.
+func queryTerms(q string) map[string]struct{} {
+	terms := make(map[string]struct{})
+	for _, w := range strings.FieldsFunc(strings.ToLower(q), func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+	}) {
+		if len(w) >= 4 {
+			terms[w] = struct{}{}
+		}
+	}
+	return terms
 }

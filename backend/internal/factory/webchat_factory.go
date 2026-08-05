@@ -21,8 +21,9 @@ func NewWebchatFactory(cont *dependencies.Container, mw *MiddlewareFactory) *Web
 		services.BuildSenders(cont.Config), cont.Logger,
 	)
 	aiReply := services.NewAIReplyService(
-		cont.AIAgentRepo, cont.MessageRepo, cont.AICreditRepo,
-		cont.AIClient, outbound, cont.Logger,
+		cont.AIAgentRepo, cont.MessageRepo, cont.ConversationRepo,
+		cont.AIKnowledgeRepo, cont.AIPlaybookRepo, cont.AIAssetRepo,
+		cont.AICreditRepo, cont.AIClient, outbound, cont.Logger,
 	)
 	ingestion := services.NewIngestionService(
 		cont.ChannelRepo, cont.ContactRepo, cont.ConversationRepo, cont.MessageRepo,

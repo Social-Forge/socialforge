@@ -33,6 +33,10 @@ func NewWebhookFactory(
 	aiReply := services.NewAIReplyService(
 		cont.AIAgentRepo,
 		cont.MessageRepo,
+		cont.ConversationRepo,
+		cont.AIKnowledgeRepo,
+		cont.AIPlaybookRepo,
+		cont.AIAssetRepo,
 		cont.AICreditRepo,
 		cont.AIClient,
 		outbound,
