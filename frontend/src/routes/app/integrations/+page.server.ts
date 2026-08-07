@@ -13,9 +13,12 @@ export const load = async ({ locals }) => {
 		}
 	});
 
+	const channelCounts = await locals.helper.channel.countsByType().catch(() => ({}));
+
 	return {
 		...pageMetaTags,
 		user,
-		lang
+		lang,
+		channelCounts
 	};
 };

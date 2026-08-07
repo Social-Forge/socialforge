@@ -115,24 +115,25 @@ func (s *ConversationService) MarkRead(ctx context.Context, tenantID, conversati
 	})
 }
 
-func (s *ConversationService) List(ctx context.Context, tenantID string, f repository.ConversationListFilter) ([]*entity.Convertation, error) {
+func (s *ConversationService) List(ctx context.Context, tenantID string, f repository.ConversationListFilter, limit, offset int) ([]*repository.ConversationListItem, int64, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
 	tid, err := uuid.Parse(tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid tenant id: %w", err)
+		return nil, 0, fmt.Errorf("invalid tenant id: %w", err)
 	}
 
-	var convs []*entity.Convertation
+	var items []*repository.ConversationListItem
+	var total int64
 	err = s.conversationRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
-		convs, err = s.conversationRepo.List(txCtx, tid, f)
+		items, total, err = s.conversationRepo.List(txCtx, tid, f, limit, offset)
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return convs, nil
+	return items, total, nil
 }
 
 // --- Message actions ---
@@ -236,26 +237,27 @@ func (s *ConversationService) TotalUnread(ctx context.Context, tenantID, agentID
 	return total, err
 }
 
-func (s *ConversationService) ListMessages(ctx context.Context, tenantID, conversationID string, limit int) ([]*entity.Message, error) {
+func (s *ConversationService) ListMessages(ctx context.Context, tenantID, conversationID string, limit, offset int) ([]*entity.Message, int64, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
 	tid, err := uuid.Parse(tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid tenant id: %w", err)
+		return nil, 0, fmt.Errorf("invalid tenant id: %w", err)
 	}
 	cid, err := uuid.Parse(conversationID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid conversation id: %w", err)
+		return nil, 0, fmt.Errorf("invalid conversation id: %w", err)
 	}
 
 	var messages []*entity.Message
+	var total int64
 	err = s.messageRepo.RunInTenantTx(repository.WithTenantID(subCtx, tid), func(txCtx context.Context) error {
-		messages, err = s.messageRepo.ListByConversation(txCtx, cid, limit)
+		messages, total, err = s.messageRepo.ListByConversationPaged(txCtx, cid, limit, offset)
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return messages, nil
+	return messages, total, nil
 }

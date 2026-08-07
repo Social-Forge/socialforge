@@ -13,9 +13,12 @@ export const load = async ({ locals }) => {
 		}
 	});
 
+	const plans = await locals.helper.billing.plans().catch(() => []);
+
 	return {
 		...pageMetaTags,
 		user,
-		lang
+		lang,
+		plans
 	};
 };

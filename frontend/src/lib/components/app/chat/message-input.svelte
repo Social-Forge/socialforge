@@ -29,13 +29,15 @@
 	import { buttonVariants, Button } from '$lib/components/ui/button';
 	import { EmojiPicker } from '$lib/components/ui/emoji-picker/index.js';
 
+	let { onsend }: { onsend?: (text: string) => void } = $props();
+
 	let value = $state('');
 	let showEmojiPicker = $state(false);
 	let selectedEmoji = $state('');
 
 	function handleSend() {
 		if (!value.trim()) return;
-		// wire this up to your WhatsApp Cloud API "send message" call
+		onsend?.(value);
 		value = '';
 	}
 

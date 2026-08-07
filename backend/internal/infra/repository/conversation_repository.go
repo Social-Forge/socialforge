@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github/socialforge/internal/entity"
@@ -15,6 +16,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// ConversationListItem is a conversation enriched with the display fields the
+// chat list UI needs (contact, channel, assigned agent, last message, labels).
+type ConversationListItem struct {
+	entity.Convertation
+	ContactName           string            `db:"contact_name" json:"contact_name"`
+	ContactAvatar         entity.NullString `db:"contact_avatar" json:"contact_avatar"`
+	ContactExternalID     string            `db:"contact_external_id" json:"contact_external_id"`
+	ChannelType           string            `db:"channel_type" json:"channel_type"`
+	ChannelName           entity.NullString `db:"channel_name" json:"channel_name"`
+	AgentName             entity.NullString `db:"agent_name" json:"agent_name"`
+	LastMessageBody       entity.NullString `db:"last_message_body" json:"last_message_body"`
+	LastMessageDirection  entity.NullString `db:"last_message_direction" json:"last_message_direction"`
+	LastMessageSenderType entity.NullString `db:"last_message_sender_type" json:"last_message_sender_type"`
+	Labels                json.RawMessage   `db:"labels_json" json:"labels"`
+}
+
 type ConversationRepository interface {
 	BaseRepository
 	// FindOrCreateOpen returns the active (open/unassigned) conversation for a
@@ -23,7 +40,7 @@ type ConversationRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.Convertation, error)
 	TouchInbound(ctx context.Context, id uuid.UUID, at time.Time) error
 	TouchOutbound(ctx context.Context, id uuid.UUID, at time.Time) error
-	List(ctx context.Context, tenantID uuid.UUID, f ConversationListFilter) ([]*entity.Convertation, error)
+	List(ctx context.Context, tenantID uuid.UUID, f ConversationListFilter, limit, offset int) ([]*ConversationListItem, int64, error)
 	TotalUnread(ctx context.Context, tenantID uuid.UUID, assignedAgentID *uuid.UUID) (int, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
 	Assign(ctx context.Context, id uuid.UUID, agentID *uuid.UUID) error
@@ -135,7 +152,7 @@ func (r *conversationRepository) TouchOutbound(ctx context.Context, id uuid.UUID
 	return nil
 }
 
-func (r *conversationRepository) List(ctx context.Context, tenantID uuid.UUID, f ConversationListFilter) ([]*entity.Convertation, error) {
+func (r *conversationRepository) List(ctx context.Context, tenantID uuid.UUID, f ConversationListFilter, limit, offset int) ([]*ConversationListItem, int64, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
@@ -172,14 +189,45 @@ func (r *conversationRepository) List(ctx context.Context, tenantID uuid.UUID, f
 		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM contacts ct WHERE ct.id = c.contact_id AND (ct.display_name ILIKE $%d OR ct.external_id ILIKE $%d))", len(args), len(args)))
 	}
 
-	query := "SELECT c.* FROM conversations c WHERE " + strings.Join(conds, " AND ") +
-		" ORDER BY c.is_pinned DESC, COALESCE(c.last_message_at, c.created_at) DESC LIMIT 200"
+	query := `SELECT c.*,
+			ct.display_name AS contact_name,
+			ct.avatar_url AS contact_avatar,
+			ct.external_id AS contact_external_id,
+			ch.type AS channel_type,
+			ch.name AS channel_name,
+			u.full_name AS agent_name,
+			lm.body AS last_message_body,
+			lm.direction AS last_message_direction,
+			lm.sender_type AS last_message_sender_type,
+			COALESCE((SELECT json_agg(json_build_object('id', l.id, 'label', l.name, 'color', l.color))
+				FROM conversation_labels cl JOIN labels l ON l.id = cl.label_id
+				WHERE cl.conversation_id = c.id), '[]') AS labels_json
+		FROM conversations c
+		LEFT JOIN contacts ct ON ct.id = c.contact_id
+		LEFT JOIN channels ch ON ch.id = c.channel_id
+		LEFT JOIN users u ON u.id = c.assigned_agent_id
+		LEFT JOIN LATERAL (
+			SELECT body, direction, sender_type FROM messages m
+			WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+			ORDER BY m.created_at DESC LIMIT 1
+		) lm ON true
+		WHERE ` + strings.Join(conds, " AND ")
 
-	var convs []*entity.Convertation
-	if err := pgxscan.Select(subCtx, r.q(subCtx), &convs, query, args...); err != nil {
-		return nil, fmt.Errorf("failed to list conversations: %w", err)
+	// Total count (same filters, no joins/ordering needed).
+	var total int64
+	countQuery := `SELECT COUNT(*) FROM conversations c WHERE ` + strings.Join(conds, " AND ")
+	if err := r.q(subCtx).QueryRow(subCtx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count conversations: %w", err)
 	}
-	return convs, nil
+
+	dataArgs := append(append([]interface{}{}, args...), limit, offset)
+	query += fmt.Sprintf(" ORDER BY c.is_pinned DESC, COALESCE(c.last_message_at, c.created_at) DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+
+	var items []*ConversationListItem
+	if err := pgxscan.Select(subCtx, r.q(subCtx), &items, query, dataArgs...); err != nil {
+		return nil, 0, fmt.Errorf("failed to list conversations: %w", err)
+	}
+	return items, total, nil
 }
 
 // TotalUnread returns the sum of unread counts (optionally scoped to one agent)

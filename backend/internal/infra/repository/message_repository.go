@@ -21,6 +21,8 @@ type MessageRepository interface {
 	Create(ctx context.Context, message *entity.Message) (inserted bool, err error)
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.Message, error)
 	ListByConversation(ctx context.Context, conversationID uuid.UUID, limit int) ([]*entity.Message, error)
+	// ListByConversationPaged returns a page of messages (newest-first) + total.
+	ListByConversationPaged(ctx context.Context, conversationID uuid.UUID, limit, offset int) ([]*entity.Message, int64, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string, errMsg string) error
 	SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error
 	EditBody(ctx context.Context, id uuid.UUID, body string) (*entity.Message, error)
@@ -99,6 +101,27 @@ func (r *messageRepository) ListByConversation(ctx context.Context, conversation
 		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}
 	return messages, nil
+}
+
+func (r *messageRepository) ListByConversationPaged(ctx context.Context, conversationID uuid.UUID, limit, offset int) ([]*entity.Message, int64, error) {
+	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
+	defer cancel()
+
+	var total int64
+	if err := r.q(subCtx).QueryRow(subCtx,
+		`SELECT COUNT(*) FROM messages WHERE conversation_id = $1 AND deleted_at IS NULL`, conversationID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count messages: %w", err)
+	}
+
+	query := `
+		SELECT * FROM messages
+		WHERE conversation_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+	var messages []*entity.Message
+	if err := pgxscan.Select(subCtx, r.q(subCtx), &messages, query, conversationID, limit, offset); err != nil {
+		return nil, 0, fmt.Errorf("failed to list messages: %w", err)
+	}
+	return messages, total, nil
 }
 
 func (r *messageRepository) SetPinned(ctx context.Context, id uuid.UUID, pinned bool) error {

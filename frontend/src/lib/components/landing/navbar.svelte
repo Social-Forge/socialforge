@@ -33,7 +33,7 @@
 	import { locales as availableLocales, localizeHref } from '$lib/paraglide/runtime';
 	import { LanguageLabels } from '$lib/utils/localize-path.js';
 
-	let { lang }: { lang: string } = $props();
+	let { lang, user }: { lang: string; user?: UserResponse | null } = $props();
 
 	let isOpen = $state(false);
 	// svelte-ignore state_referenced_locally
@@ -104,10 +104,16 @@
 						{/each}
 					</div>
 					<Separator class="mb-2" />
-					<div class="flex items-center justify-center gap-4">
-						<Button href={localizeHref('/signin')} size="sm" variant="outline">Sign In</Button>
-						<Button href={localizeHref('/signup')} size="sm">Get Started</Button>
-					</div>
+					{#if !user}
+						<div class="flex items-center justify-center gap-4">
+							<Button href={localizeHref('/signin')} size="sm" variant="outline">Sign In</Button>
+							<Button href={localizeHref('/signup')} size="sm">Get Started</Button>
+						</div>
+					{:else}
+						<div class="flex items-center justify-center gap-4">
+							<Button href={localizeHref('/app/chats')} size="sm">Chats</Button>
+						</div>
+					{/if}
 				</div>
 
 				<SheetFooter class="flex-col items-center justify-center sm:flex-col">
@@ -162,11 +168,17 @@
 	</div>
 
 	<div class="hidden lg:flex">
-		<div class="flex items-center gap-x-4">
-			<Button href={localizeHref('/signin')} size="sm" variant="outline">Sign In</Button>
-			<Button href={localizeHref('/signup')} size="sm">Get Started</Button>
-			<LightSwitch />
-			<LanguageSwitcher {languages} bind:value={currentLang} variant="outline" />
-		</div>
+		{#if !user}
+			<div class="flex items-center gap-x-4">
+				<Button href={localizeHref('/signin')} size="sm" variant="outline">Sign In</Button>
+				<Button href={localizeHref('/signup')} size="sm">Get Started</Button>
+				<LightSwitch />
+				<LanguageSwitcher {languages} bind:value={currentLang} variant="outline" />
+			</div>
+		{:else}
+			<div class="flex items-center justify-center gap-4">
+				<Button href={localizeHref('/app/chats')} size="sm">Chats</Button>
+			</div>
+		{/if}
 	</div>
 </header>

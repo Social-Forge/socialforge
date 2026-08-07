@@ -10,112 +10,69 @@ import { paraglideMiddleware } from '$lib/paraglide/server';
 import { ApiHandler } from '$lib/server/api';
 import { ServiceHelper } from '$lib/server/index';
 import { PUBLIC_API_URL } from '$env/static/public';
-import { authMiddleware, authRoutes } from '$lib/middleware/auth';
-import { tenantMiddleware, restrictedTenantOwnerRoutes } from '$lib/middleware/tenant';
-import { adminMiddleware, restrictedSuperAdminRoutes } from '$lib/middleware/admin';
-import {
-	apiMiddleware,
-	protectedApiRoutes,
-	adminApiRoutes,
-	tenantApiRoutes
-} from '$lib/middleware/api';
+import { authMiddleware, authenticatedAppMiddleware } from '$lib/middleware/auth';
+import { tenantMiddleware } from '$lib/middleware/tenant';
+import { adminMiddleware } from '$lib/middleware/admin';
+import { apiMiddleware } from '$lib/middleware/api';
 import { NODE_ENV } from '$env/static/private';
+import { BASE_LOCALE, getLocaleFromPath } from '$lib/utils/localize-path';
+import {
+        authRoutes,
+        matchesAnyRoute,
+        matchesRoutePrefix,
+        protectedAppRoutes,
+        restrictedSuperAdminRoutes,
+        restrictedTenantOwnerRoutes
+} from '$lib/middleware/rules';
 
 const LOCALE_COOKIE_NAME = 'PARAGLIDE_LOCALE';
 
-const handleParaglide: Handle = ({ event, resolve }) =>
-	paraglideMiddleware(event.request, ({ request, locale }) => {
-		event.request = request;
-		event.locals.lang = locale;
-
-		return resolve(event, {
-			transformPageChunk: ({ html }) =>
-				html
-					.replace('%paraglide.lang%', locale)
-					.replace('%paraglide.dir%', getTextDirection(locale))
-		});
-	});
-const paraglideHandleWithAutoDetectedLocale: Handle = ({ event, resolve }) => {
+const handleParaglideWithAutoDetectedLocale: Handle = ({ event, resolve }) => {
 	const { request } = event;
 	const pathname = event.url.pathname;
 
-	if (
-		pathname.startsWith('/api') ||
-		pathname.startsWith('/_app') ||
-		pathname === '/health' ||
-		pathname.includes('.')
-	) {
+        if (shouldBypassLocaleHandling(pathname)) {
 		return resolve(event);
 	}
 
 	const ua = request.headers.get('user-agent');
 	const isBot = !!ua && /bot|crawl|spider|facebookexternalhit|twitterbot/i.test(ua);
 	const pathLocale = getLocaleFromPath(pathname);
-	const cookieLocale = event.cookies.get(LOCALE_COOKIE_NAME) as Locale | null;
-	let detectedLocale: Locale;
-	if (pathLocale) {
-		detectedLocale = pathLocale;
-	} else if (cookieLocale && SUPPORTED_LOCALES.includes(cookieLocale)) {
-		detectedLocale = cookieLocale;
-	} else {
-		detectedLocale = detectLocaleFromBrowser(event);
-	}
-
-	const resolveWithParaglide = (locale: Locale) => {
-		return paraglideMiddleware(event.request, ({ request: localizedRequest }) => {
-			event.request = localizedRequest;
-			try {
-				(event as any).url = new URL(localizedRequest.url);
-			} catch {
-				try {
-					Object.defineProperty(event, 'url', { value: new URL(localizedRequest.url) });
-				} catch {
-					// ignore
-				}
-			}
-			return resolve(event, {
-				transformPageChunk: ({ html }) =>
-					html
-						.replace('%paraglide.lang%', locale)
-						.replace('%paraglide.dir%', getTextDirection(locale))
-			});
-		});
-	};
+        const cookieLocale = getCookieLocale(event);
+        const detectedLocale = resolvePreferredLocale({
+                event,
+                pathLocale,
+                cookieLocale
+        });
 
 	if (request.method !== 'GET' && request.method !== 'HEAD') {
-		event.locals.lang = detectedLocale;
-		setCookie(event, detectedLocale);
-		return resolveWithParaglide(detectedLocale);
+                return applyParaglideLocale({ event, resolve, locale: detectedLocale });
 	}
 
 	if (isBot) {
-		event.locals.lang = (pathLocale ?? 'en') as Locale;
-		setCookie(event, event.locals.lang as Locale);
-		return resolveWithParaglide(event.locals.lang as Locale);
+                return applyParaglideLocale({
+                        event,
+                        resolve,
+                        locale: pathLocale ?? BASE_LOCALE
+                });
 	}
 
-	if (pathname === '/en' || pathname.startsWith('/en/')) {
-		const stripped = pathname === '/en' ? '/' : pathname.slice(3);
+        if (pathname === `/${BASE_LOCALE}` || pathname.startsWith(`/${BASE_LOCALE}/`)) {
+                const stripped = pathname === `/${BASE_LOCALE}` ? '/' : pathname.slice(BASE_LOCALE.length + 1);
 		throw redirect(302, `${stripped}${event.url.search}`);
 	}
 
 	if (!pathLocale) {
-		const cookieLang = event.cookies.get(LOCALE_COOKIE_NAME) as Locale | null;
-		const targetLocale =
-			cookieLang && SUPPORTED_LOCALES.includes(cookieLang) ? cookieLang : detectedLocale;
+                const targetLocale = cookieLocale ?? detectedLocale;
 
-		event.locals.lang = targetLocale;
-		setCookie(event, targetLocale);
-
-		if (targetLocale !== 'en') {
+                if (targetLocale !== BASE_LOCALE) {
 			throw redirect(302, `/${targetLocale}${pathname === '/' ? '' : pathname}${event.url.search}`);
 		}
-		return resolveWithParaglide(targetLocale);
+
+                return applyParaglideLocale({ event, resolve, locale: targetLocale });
 	}
 
-	event.locals.lang = pathLocale;
-	setCookie(event, pathLocale);
-	return resolveWithParaglide(pathLocale);
+        return applyParaglideLocale({ event, resolve, locale: pathLocale });
 };
 
 const initServer: Handle = async ({ event, resolve }) => {
@@ -155,10 +112,11 @@ const auth: Handle = async ({ event, resolve }) => {
 	const pathname = url.pathname;
 	const method = request.method;
 
-	const isApiRoute = pathname.startsWith('/api');
-	const isTenantRoute = restrictedTenantOwnerRoutes.some((route) => pathname.startsWith(route));
-	const isAdminRoute = restrictedSuperAdminRoutes.some((route) => pathname.startsWith(route));
-	const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
+        const isApiRoute = matchesRoutePrefix(pathname, '/api');
+        const isAppRoute = matchesAnyRoute(pathname, protectedAppRoutes);
+        const isTenantRoute = matchesAnyRoute(pathname, restrictedTenantOwnerRoutes);
+        const isAdminRoute = matchesAnyRoute(pathname, restrictedSuperAdminRoutes);
+        const isAuthRoute = matchesAnyRoute(pathname, authRoutes);
 
 	try {
 		if (!isApiRoute) {
@@ -178,7 +136,7 @@ const auth: Handle = async ({ event, resolve }) => {
 				method,
 				pathname,
 				isAuthenticated,
-				userRoleLevel: userRoleLevel || 0,
+                                userRoleLevel: userRoleLevel ?? null,
 				hasTenant
 			});
 
@@ -214,8 +172,18 @@ const auth: Handle = async ({ event, resolve }) => {
 				pathname
 			});
 		}
+                if (isAppRoute) {
+                        return await authenticatedAppMiddleware({
+                                event,
+                                resolve,
+                                isAuthenticated,
+                                hasTenant,
+                                method,
+                                pathname
+                        });
+                }
 	} catch (error: any) {
-		if (error?.status === 302 || error?.status === 301) {
+                if (typeof error?.status === 'number' && error.status >= 300 && error.status < 400) {
 			throw error;
 		}
 		if (isApiRoute) {
@@ -241,11 +209,7 @@ const auth: Handle = async ({ event, resolve }) => {
 
 	return resolve(event);
 };
-export const handle: Handle = sequence(
-	handleParaglide
-	// initServer
-	// auth
-);
+export const handle: Handle = sequence(handleParaglideWithAutoDetectedLocale, initServer, auth);
 
 async function handleAutoRefresh(event: RequestEvent): Promise<boolean> {
 	try {
@@ -312,24 +276,80 @@ async function handleRefreshSession(event: RequestEvent) {
 		return null;
 	}
 }
-function hasLocalePrefix(path: string): boolean {
-	return SUPPORTED_LOCALES.some((l) => path === `/${l}` || path.startsWith(`/${l}/`));
+
+function getCookieLocale(event: RequestEvent): Locale | null {
+        const locale = event.cookies.get(LOCALE_COOKIE_NAME);
+        return locale && SUPPORTED_LOCALES.includes(locale as Locale) ? (locale as Locale) : null;
 }
 
-function getLocaleFromPath(pathname: string): Locale | null {
-	const match = pathname.match(/^\/(en|id)(\/|$)/);
-	return match ? (match[1] as Locale) : null;
-}
 function detectLocaleFromBrowser(event: RequestEvent): Locale {
 	const accept = event.request.headers.get('accept-language');
 	const l = accept?.split(',')[0].split('-')[0] as Locale;
 	const supported = SUPPORTED_LOCALES.includes(l);
-	return supported ? l : 'en';
+        return supported ? l : BASE_LOCALE;
+}
+
+function resolvePreferredLocale({
+        event,
+        pathLocale,
+        cookieLocale
+}: {
+        event: RequestEvent;
+        pathLocale: Locale | null;
+        cookieLocale: Locale | null;
+}): Locale {
+        return pathLocale ?? cookieLocale ?? detectLocaleFromBrowser(event);
+}
+
+function shouldBypassLocaleHandling(pathname: string): boolean {
+        return (
+                pathname.startsWith('/api') ||
+                pathname.startsWith('/_app') ||
+                pathname === '/health' ||
+                pathname.includes('.')
+        );
+}
+
+function applyParaglideLocale({
+        event,
+        resolve,
+        locale
+}: {
+        event: RequestEvent;
+        resolve: Parameters<Handle>[0]['resolve'];
+        locale: Locale;
+}) {
+        event.locals.lang = locale;
+        setCookie(event, locale);
+
+        return paraglideMiddleware(event.request, ({ request: localizedRequest }) => {
+                event.request = localizedRequest;
+
+                try {
+                        (event as any).url = new URL(localizedRequest.url);
+                } catch {
+                        try {
+                                Object.defineProperty(event, 'url', { value: new URL(localizedRequest.url) });
+                        } catch {
+                                // ignore
+                        }
+                }
+
+                return resolve(event, {
+                        transformPageChunk: ({ html }) =>
+                                html
+                                        .replace('%paraglide.lang%', locale)
+                                        .replace('%paraglide.dir%', getTextDirection(locale))
+                });
+        });
 }
 
 function setCookie(event: RequestEvent, locale: Locale) {
 	event.cookies.set('PARAGLIDE_LOCALE', locale, {
-		httpOnly: true,
+                // Locale preference is also updated from the client via Paraglide's setLocale().
+                // Keep this cookie readable/writable in the browser so client-side switches
+                // don't get overwritten by a stale server-only value on the next request.
+                httpOnly: false,
 		secure: NODE_ENV === 'production',
 		sameSite: 'lax',
 		path: '/',

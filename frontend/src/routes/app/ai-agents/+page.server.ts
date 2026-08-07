@@ -13,9 +13,12 @@ export const load = async ({ locals }) => {
 		}
 	});
 
+	const agents = await locals.helper.aiAgent.list().catch(() => []);
+
 	return {
 		...pageMetaTags,
 		user,
-		lang
+		lang,
+		agents
 	};
 };

@@ -1,13 +1,17 @@
 <script lang="ts">
-	import { chats } from './data';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import ChatListItem from './chat-list-item.svelte';
 	import { chatUiState } from '$lib/hooks/chat-ui.svelte';
+	import { chatsStore } from '$lib/stores/chats';
 	import { MoreVertical, Search, ChevronDown, Bookmark, Plus } from '@lucide/svelte';
 
-	const bookmarked = $derived(chats.filter((c) => c.pinned));
-	const rest = $derived(chats.filter((c) => !c.pinned));
+	const bookmarked = $derived(chatsStore.bookmarked);
+	const rest = $derived(chatsStore.rest);
+	let selectedChat = $state<string>('all');
+	let search = $state<string>('');
 
 	const exampleLabels = [
 		{ id: '0', label: 'All Chats', color: '#cbd5e1', textColor: '#000000' },
@@ -31,17 +35,48 @@
 	</div>
 
 	<div class="flex items-center gap-2 px-4 pb-3">
-		<button
-			class="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-2 text-sm font-medium text-foreground"
-		>
-			All Chats
-			<ChevronDown class="h-3.5 w-3.5" />
-		</button>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						variant="outline"
+						class="w-full max-w-[120px] items-center justify-start truncate text-start"
+					>
+						{selectedChat === 'all'
+							? 'All Chats'
+							: selectedChat === 'pesanan'
+								? 'pesanan Baru'
+								: selectedChat === 'pembayaran'
+									? 'Pembayaran Tertunda'
+									: 'Sedang Diproses'}
+						<ChevronDown class="h-3.5 w-3.5" />
+					</Button>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content>
+				<DropdownMenu.Group>
+					<DropdownMenu.Label>Select Chat</DropdownMenu.Label>
+					<DropdownMenu.Separator />
+					<DropdownMenu.Item onSelect={() => (selectedChat = 'all')}>All Chats</DropdownMenu.Item>
+					<DropdownMenu.Item onSelect={() => (selectedChat = 'pesanan')}
+						>Pesanan Baru</DropdownMenu.Item
+					>
+					<DropdownMenu.Item onSelect={() => (selectedChat = 'pembayaran')}
+						>Pembayaran Tertunda</DropdownMenu.Item
+					>
+					<DropdownMenu.Item onSelect={() => (selectedChat = 'sedang')}
+						>Sedang Diproses</DropdownMenu.Item
+					>
+				</DropdownMenu.Group>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
+
 		<div class="relative flex-1">
 			<Search
 				class="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
 			/>
-			<input
+			<Input
 				type="text"
 				placeholder="Search users"
 				class="w-full rounded-lg border border-border bg-secondary py-2 pr-3 pl-9 text-sm text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-ring focus:outline-none"
@@ -49,7 +84,7 @@
 		</div>
 	</div>
 
-	<div class="scrollbar-primary flex items-center gap-2 overflow-x-auto px-4 pb-3">
+	<div class="scrollbar-primary mt-2 flex items-center gap-2 overflow-x-auto px-4 pb-3">
 		{#each exampleLabels as label (label.id)}
 			<Badge
 				class="cursor-pointer bg-neutral-800 text-[10px] font-semibold text-white active:scale-95 dark:bg-neutral-50 dark:text-neutral-900"

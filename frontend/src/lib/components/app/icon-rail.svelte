@@ -11,19 +11,23 @@
 		ChartLine,
 		BotIcon,
 		CircleUserRound,
-		Funnel
+		Funnel,
+		Headset
 	} from '@lucide/svelte';
 	import { localizeHref } from '$lib/paraglide/runtime';
+
+	let { user }: { user?: UserResponse | null } = $props();
 
 	const topItems = [
 		{ icon: MessageSquare, label: 'Chats', href: '/app/chats' },
 		{ icon: ChartLine, label: 'Analytics', href: '/app/analytics' },
 		{ icon: BotIcon, label: 'Ai Agent', href: '/app/ai-agents' },
-		{ icon: CircleUserRound, label: 'Contact', href: '/app/contacts' }
+		{ icon: CircleUserRound, label: 'Contact', href: '/app/contacts' },
+		{ icon: Headset, label: 'Agent', href: '/app/agents' }
 	];
 
 	const bottomItems = [
-		{ icon: LayoutGrid, label: 'Notifications', href: '/app/integrations' },
+		{ icon: LayoutGrid, label: 'Integrations', href: '/app/integrations' },
 		{ icon: Settings, label: 'Settings', href: '/app/settings' }
 	];
 
@@ -62,6 +66,6 @@
 
 	<div class="flex flex-col items-center gap-3">
 		<LightSwitch />
-		<AppNavUser />
+		<AppNavUser {user} />
 	</div>
 </nav>

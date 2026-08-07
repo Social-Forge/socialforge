@@ -20,7 +20,7 @@ type ContactRepository interface {
 	// plus created=true when the contact was newly inserted (first-time customer).
 	FindOrCreate(ctx context.Context, contact *entity.Contact) (result *entity.Contact, created bool, err error)
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.Contact, error)
-	List(ctx context.Context, tenantID uuid.UUID, channelID *uuid.UUID, search string) ([]*entity.Contact, error)
+	List(ctx context.Context, tenantID uuid.UUID, channelID *uuid.UUID, search string, limit, offset int) ([]*entity.Contact, int64, error)
 	SetBlocked(ctx context.Context, id uuid.UUID, blocked bool) error
 	Update(ctx context.Context, contact *entity.Contact) (*entity.Contact, error)
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -85,23 +85,25 @@ func (r *contactRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity
 	return &contact, nil
 }
 
-func (r *contactRepository) List(ctx context.Context, tenantID uuid.UUID, channelID *uuid.UUID, search string) ([]*entity.Contact, error) {
+func (r *contactRepository) List(ctx context.Context, tenantID uuid.UUID, channelID *uuid.UUID, search string, limit, offset int) ([]*entity.Contact, int64, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT * FROM contacts
-		WHERE tenant_id = $1
+	where := `WHERE tenant_id = $1
 			AND ($2::uuid IS NULL OR channel_id = $2)
-			AND ($3 = '' OR display_name ILIKE '%'||$3||'%' OR external_id ILIKE '%'||$3||'%')
-		ORDER BY updated_at DESC
-		LIMIT 200`
+			AND ($3 = '' OR display_name ILIKE '%'||$3||'%' OR external_id ILIKE '%'||$3||'%')`
 
-	var contacts []*entity.Contact
-	if err := pgxscan.Select(subCtx, r.q(subCtx), &contacts, query, tenantID, channelID, search); err != nil {
-		return nil, fmt.Errorf("failed to list contacts: %w", err)
+	var total int64
+	if err := r.q(subCtx).QueryRow(subCtx, `SELECT COUNT(*) FROM contacts `+where, tenantID, channelID, search).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count contacts: %w", err)
 	}
-	return contacts, nil
+
+	query := `SELECT * FROM contacts ` + where + ` ORDER BY updated_at DESC LIMIT $4 OFFSET $5`
+	var contacts []*entity.Contact
+	if err := pgxscan.Select(subCtx, r.q(subCtx), &contacts, query, tenantID, channelID, search, limit, offset); err != nil {
+		return nil, 0, fmt.Errorf("failed to list contacts: %w", err)
+	}
+	return contacts, total, nil
 }
 
 func (r *contactRepository) SetBlocked(ctx context.Context, id uuid.UUID, blocked bool) error {

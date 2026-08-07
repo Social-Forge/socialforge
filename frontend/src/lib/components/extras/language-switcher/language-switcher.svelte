@@ -34,7 +34,7 @@
 	import { buttonVariants } from '$lib/components/extras/button';
 	import { cn } from '$lib/utils.js';
 	import { LanguageLabels } from '$lib/utils/localize-path.js';
-	import { setLocale, isLocale } from '$lib/paraglide/runtime';
+        import { deLocalizeHref, isLocale, localizeHref, setLocale } from '$lib/paraglide/runtime';
 
 	let {
 		languages = [],
@@ -93,7 +93,7 @@
 	function handleLanguageChange(code: string) {
 		if (!isLocale(code)) return;
 
-		setLocale(code);
+                setLocale(code, { reload: false });
 
 		value = code;
 
@@ -101,22 +101,9 @@
 			onChange(code);
 		}
 
-		const pathWithoutLocale = removeLocaleFromPath(pathname);
-		const newPath =
-			code === 'en'
-				? `/${pathWithoutLocale}${pathWithoutLocale === '' ? '' : ''}`
-				: `/${code}${pathWithoutLocale}`;
+                const newPath = localizeHref(deLocalizeHref(pathname), { locale: code });
 
 		goto(newPath, { replaceState: true, invalidateAll: true });
-	}
-
-	function removeLocaleFromPath(path: string): string {
-		const match = path.match(/^\/(en|id|es)(\/|$)/);
-		if (match) {
-			const remaining = path.slice(match[0].length - (match[2] === '/' ? 1 : 0));
-			return remaining || '/';
-		}
-		return path || '/';
 	}
 </script>
 

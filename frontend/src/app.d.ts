@@ -53,7 +53,7 @@ declare global {
 		method: string;
 		pathname: string;
 		isAuthenticated: boolean;
-		userRoleLevel: number;
+                userRoleLevel: number | null;
 		hasTenant: boolean;
 	}
 }

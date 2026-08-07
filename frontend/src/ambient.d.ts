@@ -52,7 +52,26 @@ declare global {
 		params: QueryParams;
 		meta: ApiMeta | null;
 		isLoading: boolean;
+		page: number;
+		limit: number;
+		search: string;
+		type: string;
+		sort_by: string;
+		order_by: 'asc' | 'desc';
+		params: QueryParams;
+		date_from: Date | string;
+		date_to: Date | string;
 	}
+	interface QueryParamsConfig<T = any> {
+		defaults: T;
+		validators?: Partial<Record<keyof T, (value: any) => any>>;
+	}
+	interface SearchFieldConfig {
+		field: string;
+		type: 'string' | 'number' | 'date' | 'boolean';
+		searchable?: boolean; // Default: true
+	}
+
 	const DEFAULT_PAGINATION: QueryParams = {
 		page: 1,
 		limit: 10,

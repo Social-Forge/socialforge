@@ -7,6 +7,8 @@ import AppInfoPanel from './info-panel.svelte';
 import AppMessageBubble from './message-bubble.svelte';
 import AppMessageInput from './message-input.svelte';
 import AppMessageList from './message-list.svelte';
+import AppChatFilter from './chat-filter.svelte';
+import AppCreateChatForm from './create-chat-form.svelte';
 
 export {
 	AppChatHeader,
@@ -17,5 +19,7 @@ export {
 	AppInfoPanel,
 	AppMessageBubble,
 	AppMessageInput,
-	AppMessageList
+	AppMessageList,
+	AppChatFilter,
+	AppCreateChatForm
 };

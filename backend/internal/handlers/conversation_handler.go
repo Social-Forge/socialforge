@@ -7,7 +7,6 @@ import (
 	"github/socialforge/internal/infra/repository"
 	"github/socialforge/internal/middlewares"
 	"github/socialforge/internal/services"
-	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -256,11 +255,12 @@ func (h *ConversationHandler) List(c fiber.Ctx) error {
 		}
 	}
 
-	convs, err := h.convSvc.List(ctx, tenantID, f)
+	p := helpers.ParsePageParams(c)
+	convs, total, err := h.convSvc.List(ctx, tenantID, f, p.Limit, p.Offset)
 	if err != nil {
 		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
 	}
-	return helpers.Respond(c, fiber.StatusOK, "Conversations retrieved successfully", convs)
+	return helpers.RespondWithMeta(c, fiber.StatusOK, "Conversations retrieved successfully", convs, helpers.NewPageMeta(p, total))
 }
 
 func (h *ConversationHandler) Unread(c fiber.Ctx) error {
@@ -282,12 +282,12 @@ func (h *ConversationHandler) ListMessages(c fiber.Ctx) error {
 	if !ok {
 		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
 	}
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	messages, err := h.convSvc.ListMessages(ctx, tenantID, c.Params("id"), limit)
+	p := helpers.ParsePageParams(c)
+	messages, total, err := h.convSvc.ListMessages(ctx, tenantID, c.Params("id"), p.Limit, p.Offset)
 	if err != nil {
 		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
 	}
-	return helpers.Respond(c, fiber.StatusOK, "Messages retrieved successfully", messages)
+	return helpers.RespondWithMeta(c, fiber.StatusOK, "Messages retrieved successfully", messages, helpers.NewPageMeta(p, total))
 }
 
 func (h *ConversationHandler) SendMessage(c fiber.Ctx) error {

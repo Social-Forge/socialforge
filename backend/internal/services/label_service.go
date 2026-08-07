@@ -32,19 +32,20 @@ func (s *LabelService) tctx(ctx context.Context, tenantID string) (context.Conte
 	return repository.WithTenantID(ctx, tid), tid, nil
 }
 
-func (s *LabelService) List(ctx context.Context, tenantID string) ([]*entity.Label, error) {
+func (s *LabelService) List(ctx context.Context, tenantID string, limit, offset int) ([]*entity.Label, int64, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 	tctx, tid, err := s.tctx(subCtx, tenantID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var labels []*entity.Label
+	var total int64
 	err = s.labelRepo.RunInTenantTx(tctx, func(txCtx context.Context) error {
-		labels, err = s.labelRepo.List(txCtx, tid)
+		labels, total, err = s.labelRepo.List(txCtx, tid, limit, offset)
 		return err
 	})
-	return labels, err
+	return labels, total, err
 }
 
 func (s *LabelService) Create(ctx context.Context, tenantID string, req *dto.CreateLabelRequest) (*entity.Label, error) {

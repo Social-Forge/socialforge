@@ -32,4 +32,6 @@ func NewTokenRoutes(
 func (r *TokenRoutes) RegisterRoutes(parent fiber.Router) {
 	router := parent.Group(r.path)
 	router.Get("/csrf", r.handler.GetCSRFToken)
+	// Authenticated Centrifugo connection token for realtime.
+	router.Get("/centrifugo", r.auth.JWTAuth(), r.handler.GetCentrifugoToken)
 }

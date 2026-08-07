@@ -8,6 +8,8 @@ import { localizeHref } from '$lib/paraglide/runtime.js';
 export const load = async ({ url, locals, parent }) => {
 	const defaultOrigin = await parent().then((data) => data.canonicalUrl || '');
 	const alternates = await parent().then((data) => data.alternates || []);
+        const oauthError = url.searchParams.get('oauth_error');
+        const redirectTarget = url.searchParams.get('redirect') || '/app/chats';
 
 	const pageMetaTags = definePageMetaTags({
 		title: 'Sign Up',
@@ -24,7 +26,9 @@ export const load = async ({ url, locals, parent }) => {
 	const form = await superValidate(zod4(registerSchema));
 	return {
 		...pageMetaTags,
-		form
+                form,
+                oauthError,
+                redirectTarget
 	};
 };
 export const actions = {

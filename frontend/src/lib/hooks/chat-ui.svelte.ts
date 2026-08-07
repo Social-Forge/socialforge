@@ -1,4 +1,4 @@
-import { chats } from '$lib/components/app/chat/data';
+import { chatsStore } from '$lib/stores/chats';
 import type { ChatSummary } from '$lib/components/app/chat/types.js';
 
 /**
@@ -14,7 +14,7 @@ class ChatUiState {
 	mobileView = $state<'list' | 'chat' | 'info'>('list');
 
 	get activeChat(): ChatSummary | undefined {
-		return chats.find((c) => c.id === this.activeChatId);
+		return this.activeChatId ? chatsStore.getConversation(this.activeChatId) : undefined;
 	}
 
 	openChat(chatId: string) {

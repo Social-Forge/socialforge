@@ -64,4 +64,7 @@ func RegisterApiRoutes(router fiber.Router, cont *dependencies.Container, mw *fa
 
 	billingFactory := factory.NewBillingFactory(cont, mw)
 	billingFactory.GetRoutes(router)
+
+	contactFactory := factory.NewContactFactory(cont, mw)
+	contactFactory.GetRoutes(router)
 }

@@ -1,26 +1,25 @@
 import { redirect } from '@sveltejs/kit';
+import {
+        allowedWhenAuthenticated,
+        authRoutes,
+        buildSignInRedirect,
+        isSuperAdmin,
+        matchesAnyRoute,
+        sanitizeRedirectTarget
+} from '$lib/middleware/rules';
+import { localizePath } from '$lib/utils/localize-path';
 
-export const allowedWhenAuthenticated = ['/signout'];
-export const authRoutes = [
-	'/signin',
-	'/signup',
-	'/verify-email',
-	'/reset-password',
-	'/two-factor',
-	'/forgot-password',
-	'/confirm'
-];
 export const authMiddleware = async (handler: RequestHandlerParams) => {
 	const { event, resolve, isAuthenticated, method, pathname } = handler;
 
 	if (isAuthenticated) {
 		const isAuthPage =
-			authRoutes.some((route) => pathname.startsWith(route)) &&
-			!allowedWhenAuthenticated.some((route) => pathname.startsWith(route));
+                        matchesAnyRoute(pathname, authRoutes) &&
+                        !matchesAnyRoute(pathname, allowedWhenAuthenticated);
 
 		if (isAuthPage) {
-			const redirectTo = event.url.searchParams.get('redirect') || '/app/chats';
-			throw redirect(302, redirectTo);
+                        const redirectTo = sanitizeRedirectTarget(event.url.searchParams.get('redirect'));
+                        throw redirect(302, localizePath(redirectTo, event.locals.lang));
 		}
 	}
 
@@ -29,4 +28,20 @@ export const authMiddleware = async (handler: RequestHandlerParams) => {
 	}
 
 	return resolve(event);
+};
+
+export const authenticatedAppMiddleware = async (handler: RequestHandlerParams) => {
+        const { event, resolve, isAuthenticated, hasTenant } = handler;
+
+        if (!isAuthenticated) {
+                throw redirect(302, buildSignInRedirect(`${event.url.pathname}${event.url.search}`, event.locals.lang));
+        }
+
+        const userRoleLevel = event.locals.user?.role?.level ?? null;
+
+        if (!hasTenant && !isSuperAdmin(userRoleLevel)) {
+                throw redirect(302, localizePath('/signup', event.locals.lang));
+        }
+
+        return resolve(event);
 };

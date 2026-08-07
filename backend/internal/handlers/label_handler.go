@@ -59,11 +59,12 @@ func (h *LabelHandler) List(c fiber.Ctx) error {
 	if !ok {
 		return helpers.Respond(c, fiber.StatusBadRequest, "Tenant context is required", nil)
 	}
-	labels, err := h.service.List(ctx, tenantID)
+	p := helpers.ParsePageParams(c)
+	labels, total, err := h.service.List(ctx, tenantID, p.Limit, p.Offset)
 	if err != nil {
 		return helpers.Respond(c, fiber.StatusInternalServerError, err.Error(), nil)
 	}
-	return helpers.Respond(c, fiber.StatusOK, "Labels retrieved successfully", labels)
+	return helpers.RespondWithMeta(c, fiber.StatusOK, "Labels retrieved successfully", labels, helpers.NewPageMeta(p, total))
 }
 
 func (h *LabelHandler) Create(c fiber.Ctx) error {

@@ -20,7 +20,11 @@ func NewTokenFactory(
 	mw *MiddlewareFactory,
 ) *TokenFactory {
 	service := services.NewTokenService(cont.TokenRepo, cont.TokenHelper, cont.Logger)
-	handler := handlers.NewTokenHandler(mw.ContextMiddleware, service, cont.Logger)
+	handler := handlers.NewTokenHandler(
+		mw.ContextMiddleware, service,
+		cont.Config.Centrifugo.TokenSecret, cont.Config.Centrifugo.WsURl,
+		cont.Logger,
+	)
 	return &TokenFactory{
 		service: service,
 		handler: handler,

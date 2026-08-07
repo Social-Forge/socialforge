@@ -10,7 +10,6 @@
 	import { SvelteKitTopLoader } from 'sveltekit-top-loader';
 
 	let { data, children } = $props();
-
 	let metaTags = $derived(deepMerge(data.baseMetaTags, page.data.pageMetaTags));
 </script>
 
@@ -25,6 +24,7 @@
 
 <div style="display:none">
 	{#each locales as locale (locale)}
-		<a href={resolve(localizeHref(page.url.pathname, { locale }) as Pathname)}>{locale}</a>
+		<!-- @ts-expect-error -->
+		<a href={resolve(localizeHref(page.url.pathname, { locale }) as any)}>{locale}</a>
 	{/each}
 </div>

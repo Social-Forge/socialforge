@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import { MobileDialogTutorial } from '$lib/components/app/integration/index.js';
+	import { MobileGuide, DesktopGuide } from '$lib/components/app/integration/index.js';
 	import { localizeHref } from '$lib/paraglide/runtime.js';
 	import { Plus, Crown, User, Rocket, ArrowLeft } from '@lucide/svelte';
 
@@ -43,11 +43,11 @@
 								</Button>
 								<div class="text-xl font-medium capitalize">{currentChannelName()}</div>
 							</div>
-							<MobileDialogTutorial type={data.slug} />
+							<MobileGuide channel={currentChannelName()} type={data.slug} />
 						</div>
 						<div class="mb-5 text-sm text-muted-foreground">
 							<span>
-								Mulailah berkomunikasi dengan pelanggan Anda melalui {currentChannelName()}
+								Start communicating with your customers through {currentChannelName()}
 							</span>
 						</div>
 						<div data-test="limit" class="mb-2 flex items-center justify-start">
@@ -59,7 +59,7 @@
 						<div class="flex w-max gap-4">
 							<Button class="capitalize">
 								<Plus class="text-3xl text-white" />
-								<span class="ml-2"> Tambahkan {currentChannelName()} </span>
+								<span class="ml-2"> Add {currentChannelName()} </span>
 							</Button>
 						</div>
 					</div>
@@ -76,79 +76,7 @@
 					</div>
 				</div>
 			</div>
-			<div
-				class="bg-opacity-40 fixed top-0 left-0 z-60 hidden h-full w-full bg-black lg:relative lg:z-0 lg:flex lg:h-full lg:w-[30%] lg:bg-transparent"
-			>
-				<div
-					class="bg-base-100 absolute bottom-0 left-0 z-10 flex h-122.5 w-full flex-col gap-6 rounded-t-3xl px-10 pt-5 lg:h-full lg:bg-transparent"
-				>
-					<div
-						class="absolute top-2 right-0 flex h-15 w-15 cursor-pointer items-center justify-center lg:hidden"
-					>
-						<i class="bi bi-x-lg text-[20px]"></i>
-					</div>
-					<div class="w-full">
-						<div class="mb-3 text-xl font-medium">Integrasi Channel Link Chat</div>
-						<div class="text-muted-foreground"></div>
-					</div>
-					<div
-						class="h-auto w-full overflow-y-auto rounded-xl border-t border-border px-5 pt-5 pb-10"
-					>
-						<div class="mb-6 flex justify-between gap-2 font-bold">
-							Bagaimana cara menambahkan Link Chat? <span class="cursor-pointer"
-								><svg
-									xmlns="http://www.w3.org/2000/svg"
-									xmlns:xlink="http://www.w3.org/1999/xlink"
-									aria-hidden="true"
-									role="img"
-									class="iconify iconify--ph text-2xl"
-									width="1em"
-									height="1em"
-									viewBox="0 0 256 256"
-									><path
-										fill="currentColor"
-										d="M210.83 162.83a4 4 0 0 1-5.66 0L128 85.66l-77.17 77.17a4 4 0 0 1-5.66-5.66l80-80a4 4 0 0 1 5.66 0l80 80a4 4 0 0 1 0 5.66"
-									></path></svg
-								></span
-							>
-						</div>
-						<div class="space-y-4">
-							<div class="flex w-full items-center gap-4">
-								<div
-									class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary select-none"
-								>
-									<div class="text-white">1</div>
-								</div>
-								<div class="text-base-content">Klik Tambahkan Link Chat</div>
-							</div>
-							<div class="flex w-full items-center gap-4">
-								<div
-									class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary select-none"
-								>
-									<div class="text-white">2</div>
-								</div>
-								<div class="text-base-content">Masukan Nama Link Chat</div>
-							</div>
-							<div class="flex w-full items-center gap-4">
-								<div
-									class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary select-none"
-								>
-									<div class="text-white">3</div>
-								</div>
-								<div class="text-base-content">Klik Simpan</div>
-							</div>
-							<div class="flex w-full items-center gap-4">
-								<div
-									class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary select-none"
-								>
-									<div class="text-white">4</div>
-								</div>
-								<div class="text-base-content">Selesai.</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
+			<DesktopGuide channel={currentChannelName()} type={data.slug} />
 		</div>
 	</div>
 </div>

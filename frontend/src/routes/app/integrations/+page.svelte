@@ -11,57 +11,64 @@
 
 	let selectedTab = $state('channel');
 
-	const dummyChannel = [
+	// Channel catalog (static) enriched with the real per-type integration count
+	// from the backend (data.channelCounts keyed by backend channel type).
+	const channelCatalog = [
 		{
 			name: 'Linkchat',
+			type: 'linkchat',
 			description: 'Start communicating with your customers via Linkchat',
-			integrations: 0,
 			href: '/app/integrations/linkchat',
 			icon: '/images/channel/linkchat.svg'
 		},
 		{
 			name: 'Webchat',
+			type: 'webchat',
 			description: 'Start communicating with your customers via Webchat',
-			integrations: 0,
 			href: '/app/integrations/webchat',
 			icon: '/images/channel/webchat.svg'
 		},
 		{
 			name: 'WhatsApp',
+			type: 'whatsapp_waha',
 			description: 'Start communicating with your customers via WhatsApp',
-			integrations: 0,
-			href: '/app/integrations/whatsapp',
+			href: '/app/integrations/whatsapp_waha',
 			icon: '/images/channel/whatsapp-unofficial.svg'
 		},
 		{
 			name: 'WhatsApp API',
+			type: 'whatsapp_meta',
 			description: 'Start communicating with your customers via WhatsApp API',
-			integrations: 0,
-			href: '/app/integrations/whatsapp',
+			href: '/app/integrations/whatsapp_meta',
 			icon: '/images/channel/whatsapp-official.svg'
 		},
 		{
 			name: 'Messenger',
+			type: 'messenger',
 			description: 'Start communicating with your customers via Messenger',
-			integrations: 0,
 			href: '/app/integrations/messenger',
 			icon: '/images/channel/messenger.svg'
 		},
 		{
 			name: 'Telegram',
+			type: 'telegram',
 			description: 'Start communicating with your customers via Telegram',
-			integrations: 0,
 			href: '/app/integrations/telegram',
 			icon: '/images/channel/telegram.svg'
 		},
 		{
 			name: 'Instagram',
+			type: 'instagram',
 			description: 'Start communicating with your customers via Instagram',
-			integrations: 0,
 			href: '/app/integrations/instagram',
 			icon: '/images/channel/instagram.svg'
 		}
 	];
+
+	const counts = $derived((data.channelCounts ?? {}) as Record<string, number>);
+	const dummyChannel = $derived(
+		channelCatalog.map((c) => ({ ...c, integrations: counts[c.type] ?? 0 }))
+	);
 
 	async function onClickIntegration(url: string) {
 		// Navigate to the integration page for the selected channel
@@ -122,7 +129,7 @@
 										<a href={localizeHref(channel.href)} class="rounded-lg px-4 py-2">
 											<div class="flex items-center gap-2">
 												<span> See Integrations </span>
-												<div>(0)</div>
+												<div>({channel.integrations})</div>
 											</div>
 										</a>
 										<Button

@@ -30,8 +30,18 @@ export class AuthHandler extends BaseHandler {
 	async oAuthRedirect(provider: string) {
 		return await this.api.publicRequest('GET', `/auth/oauth/${provider}`);
 	}
-	async oAuthCallback(provider: string) {
-		return await this.api.publicRequest<LoginResponse>('GET', `/auth/oauth/${provider}/callback`);
+        async oAuthCallback(provider: string, query?: URLSearchParams | string, headers?: Record<string, string>) {
+                const serializedQuery =
+                        typeof query === 'string'
+                                ? query.replace(/^\?/, '')
+                                : query instanceof URLSearchParams
+                                        ? query.toString()
+                                        : '';
+                const path = serializedQuery
+                        ? `/auth/oauth/${provider}/callback?${serializedQuery}`
+                        : `/auth/oauth/${provider}/callback`;
+
+                return await this.api.publicRequest<LoginResponse>('GET', path, undefined, headers);
 	}
 	async refreshToken(refreshToken: string) {
 		return await this.api.publicRequest<LoginResponse>('POST', '/auth/refresh-token', {

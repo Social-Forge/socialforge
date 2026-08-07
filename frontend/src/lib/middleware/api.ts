@@ -1,74 +1,49 @@
-import { error, redirect } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
-
-export const protectedApiRoutes = [
-	'/api/users',
-	'/api/chats',
-	'/api/messages',
-	'/api/tenants',
-	'/api/divisions',
-	'/api/agents',
-	'/api/channels',
-	'/api/settings',
-	'/api/analytics',
-	'/api/profile'
-];
-
-export const adminApiRoutes = [
-	'/api/admin/users',
-	'/api/admin/tenants',
-	'/api/admin/system',
-	'/api/admin/logs',
-	'/api/admin/backup'
-];
-
-export const tenantApiRoutes = [
-	'/api/tenants',
-	'/api/divisions',
-	'/api/agents',
-	'/api/channels',
-	'/api/settings'
-];
-
-const RoleLevelMap = {
-	SUPER_ADMIN: 0,
-	TENANT_OWNER: 1,
-	SUPERVISOR: 2,
-	AGENT: 3
-} as const;
+import {
+        adminApiRoutes,
+        canManageTenant,
+        isSuperAdmin,
+        matchesAnyRoute,
+        matchesRoutePrefix,
+        publicApiRoutes,
+        tenantMemberApiRoutes,
+        tenantOwnerApiRoutes
+} from '$lib/middleware/rules';
 
 export const apiMiddleware = async ({
-	event,
 	method,
 	pathname,
 	isAuthenticated,
 	userRoleLevel,
 	hasTenant
 }: ApiMiddlewareParams) => {
-	if (!pathname.startsWith('/api')) {
+        if (!matchesRoutePrefix(pathname, '/api')) {
 		return { allowed: true };
 	}
 
-	const requiresAuth = protectedApiRoutes.some((route) => pathname.startsWith(route));
+        if (matchesAnyRoute(pathname, publicApiRoutes)) {
+                return { allowed: true };
+        }
 
-	if (requiresAuth && !isAuthenticated) {
+        if (!isAuthenticated) {
 		throw error(401, {
 			message: 'Authentication required',
 			code: 'UNAUTHORIZED'
 		});
 	}
 
-	const isAdminRoute = adminApiRoutes.some((route) => pathname.startsWith(route));
-	if (isAdminRoute) {
-		if (userRoleLevel !== RoleLevelMap.SUPER_ADMIN) {
-			throw error(403, {
-				message: 'Admin access required',
-				code: 'FORBIDDEN'
-			});
-		}
+        if (matchesAnyRoute(pathname, adminApiRoutes) && !isSuperAdmin(userRoleLevel)) {
+                throw error(403, {
+                        message: 'Admin access required',
+                        code: 'FORBIDDEN'
+                });
 	}
 
-	const requiresTenant = tenantApiRoutes.some((route) => pathname.startsWith(route));
+        const requiresTenant =
+                matchesAnyRoute(pathname, tenantMemberApiRoutes) ||
+                matchesAnyRoute(pathname, tenantOwnerApiRoutes);
+
 	if (requiresTenant && !hasTenant) {
 		throw error(403, {
 			message: 'Tenant required',
@@ -76,21 +51,16 @@ export const apiMiddleware = async ({
 		});
 	}
 
-	const restrictedMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
-	const isRestrictedMethod = restrictedMethods.includes(method);
+        const restrictedMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+        const isRestrictedMethod = restrictedMethods.includes(method);
+        const requiresTenantOwner = matchesAnyRoute(pathname, tenantOwnerApiRoutes);
 
-	if (requiresTenant && isRestrictedMethod) {
-		const allowedRoles = [RoleLevelMap.SUPER_ADMIN, RoleLevelMap.TENANT_OWNER] as const as number[];
-
-		if (userRoleLevel == null || !allowedRoles.includes(userRoleLevel)) {
-			throw error(403, {
-				message: 'Insufficient permissions for this action',
-				code: 'FORBIDDEN'
-			});
-		}
+        if (requiresTenantOwner && isRestrictedMethod && !canManageTenant(userRoleLevel)) {
+                throw error(403, {
+                        message: 'Insufficient permissions for this action',
+                        code: 'FORBIDDEN'
+                });
 	}
-
-	// 6. Rate limiting untuk API (opsional)
 
 	return { allowed: true };
 };

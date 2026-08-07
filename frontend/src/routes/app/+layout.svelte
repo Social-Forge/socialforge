@@ -3,12 +3,12 @@
 	import { AppIconRail, AppMobileBottomNav } from '$lib/components/app';
 	import { chatUiState } from '$lib/hooks/chat-ui.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
 </script>
 
 <Tooltip.Provider>
 	<div class="flex h-dvh w-full overflow-hidden bg-background">
-		<AppIconRail />
+		<AppIconRail user={data.user} />
 
 		{@render children()}
 

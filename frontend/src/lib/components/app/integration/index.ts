@@ -1,3 +1,4 @@
-import MobileDialogTutorial from './mobile-dialog-tutorial.svelte';
+import MobileGuide from './mobile-guide.svelte';
+import DesktopGuide from './desktop-guide.svelte';
 
-export { MobileDialogTutorial };
+export { MobileGuide, DesktopGuide };

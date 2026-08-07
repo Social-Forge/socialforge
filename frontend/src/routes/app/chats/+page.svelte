@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import {
 		AppChatListPanel,
@@ -7,6 +8,26 @@
 		AppInfoPanel
 	} from '$lib/components/app/chat';
 	import { chatUiState } from '$lib/hooks/chat-ui.svelte';
+	import { chatsStore } from '$lib/stores/chats';
+	import { connectRealtime, disconnectRealtime } from '$lib/realtime/chat-realtime';
+	import type { ChatSummary } from '$lib/components/app/chat/types';
+
+	let { data } = $props();
+
+	// Seed the store with real conversations from the server load.
+	// svelte-ignore state_referenced_locally
+	chatsStore.setConversations((data.conversations ?? []) as ChatSummary[]);
+
+	onMount(() => {
+		if (data.realtime?.token && data.realtime?.tenantId) {
+			connectRealtime({
+				token: data.realtime.token,
+				wsUrl: data.realtime.wsUrl,
+				tenantId: data.realtime.tenantId
+			});
+		}
+		return () => disconnectRealtime();
+	});
 </script>
 
 <!-- Chat list: always visible on desktop; on mobile only in 'list' view -->

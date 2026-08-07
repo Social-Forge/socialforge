@@ -18,7 +18,7 @@ import (
 type LabelRepository interface {
 	BaseRepository
 	Create(ctx context.Context, label *entity.Label) error
-	List(ctx context.Context, tenantID uuid.UUID) ([]*entity.Label, error)
+	List(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]*entity.Label, int64, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.Label, error)
 	Update(ctx context.Context, label *entity.Label) (*entity.Label, error)
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -64,16 +64,21 @@ func (r *labelRepository) Create(ctx context.Context, label *entity.Label) error
 	return nil
 }
 
-func (r *labelRepository) List(ctx context.Context, tenantID uuid.UUID) ([]*entity.Label, error) {
+func (r *labelRepository) List(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]*entity.Label, int64, error) {
 	subCtx, cancel := contextpool.WithTimeoutIfNone(ctx, 15*time.Second)
 	defer cancel()
 
+	var total int64
+	if err := r.q(subCtx).QueryRow(subCtx, `SELECT COUNT(*) FROM labels WHERE tenant_id = $1`, tenantID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count labels: %w", err)
+	}
+
 	var labels []*entity.Label
 	if err := pgxscan.Select(subCtx, r.q(subCtx), &labels,
-		`SELECT * FROM labels WHERE tenant_id = $1 ORDER BY name ASC`, tenantID); err != nil {
-		return nil, fmt.Errorf("failed to list labels: %w", err)
+		`SELECT * FROM labels WHERE tenant_id = $1 ORDER BY name ASC LIMIT $2 OFFSET $3`, tenantID, limit, offset); err != nil {
+		return nil, 0, fmt.Errorf("failed to list labels: %w", err)
 	}
-	return labels, nil
+	return labels, total, nil
 }
 
 func (r *labelRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.Label, error) {

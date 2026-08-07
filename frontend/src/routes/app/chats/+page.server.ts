@@ -13,9 +13,17 @@ export const load = async ({ locals }) => {
 		}
 	});
 
+	// Real conversations + realtime connection token from the backend.
+	const [conversations, realtime] = await Promise.all([
+		locals.helper.conversation.list().catch(() => []),
+		locals.helper.conversation.realtimeToken().catch(() => null)
+	]);
+
 	return {
 		...pageMetaTags,
 		user,
-		lang
+		lang,
+		conversations,
+		realtime
 	};
 };
