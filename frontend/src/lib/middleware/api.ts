@@ -1,14 +1,14 @@
 import { error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import {
-        adminApiRoutes,
-        canManageTenant,
-        isSuperAdmin,
-        matchesAnyRoute,
-        matchesRoutePrefix,
-        publicApiRoutes,
-        tenantMemberApiRoutes,
-        tenantOwnerApiRoutes
+	adminApiRoutes,
+	canManageTenant,
+	isSuperAdmin,
+	matchesAnyRoute,
+	matchesRoutePrefix,
+	publicApiRoutes,
+	tenantMemberApiRoutes,
+	tenantOwnerApiRoutes
 } from '$lib/middleware/rules';
 
 export const apiMiddleware = async ({
@@ -18,31 +18,31 @@ export const apiMiddleware = async ({
 	userRoleLevel,
 	hasTenant
 }: ApiMiddlewareParams) => {
-        if (!matchesRoutePrefix(pathname, '/api')) {
+	if (!matchesRoutePrefix(pathname, '/api')) {
 		return { allowed: true };
 	}
 
-        if (matchesAnyRoute(pathname, publicApiRoutes)) {
-                return { allowed: true };
-        }
+	if (matchesAnyRoute(pathname, publicApiRoutes)) {
+		return { allowed: true };
+	}
 
-        if (!isAuthenticated) {
+	if (!isAuthenticated) {
 		throw error(401, {
 			message: 'Authentication required',
 			code: 'UNAUTHORIZED'
 		});
 	}
 
-        if (matchesAnyRoute(pathname, adminApiRoutes) && !isSuperAdmin(userRoleLevel)) {
-                throw error(403, {
-                        message: 'Admin access required',
-                        code: 'FORBIDDEN'
-                });
+	if (matchesAnyRoute(pathname, adminApiRoutes) && !isSuperAdmin(userRoleLevel)) {
+		throw error(403, {
+			message: 'Admin access required',
+			code: 'FORBIDDEN'
+		});
 	}
 
-        const requiresTenant =
-                matchesAnyRoute(pathname, tenantMemberApiRoutes) ||
-                matchesAnyRoute(pathname, tenantOwnerApiRoutes);
+	const requiresTenant =
+		matchesAnyRoute(pathname, tenantMemberApiRoutes) ||
+		matchesAnyRoute(pathname, tenantOwnerApiRoutes);
 
 	if (requiresTenant && !hasTenant) {
 		throw error(403, {
@@ -51,15 +51,15 @@ export const apiMiddleware = async ({
 		});
 	}
 
-        const restrictedMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
-        const isRestrictedMethod = restrictedMethods.includes(method);
-        const requiresTenantOwner = matchesAnyRoute(pathname, tenantOwnerApiRoutes);
+	const restrictedMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+	const isRestrictedMethod = restrictedMethods.includes(method);
+	const requiresTenantOwner = matchesAnyRoute(pathname, tenantOwnerApiRoutes);
 
-        if (requiresTenantOwner && isRestrictedMethod && !canManageTenant(userRoleLevel)) {
-                throw error(403, {
-                        message: 'Insufficient permissions for this action',
-                        code: 'FORBIDDEN'
-                });
+	if (requiresTenantOwner && isRestrictedMethod && !canManageTenant(userRoleLevel)) {
+		throw error(403, {
+			message: 'Insufficient permissions for this action',
+			code: 'FORBIDDEN'
+		});
 	}
 
 	return { allowed: true };

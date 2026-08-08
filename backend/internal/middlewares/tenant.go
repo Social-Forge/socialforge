@@ -57,13 +57,16 @@ func (m *TenantMiddleware) TenantGuard() fiber.Handler {
 			m.logger.Error("Tenant is inactive")
 			return helpers.Respond(c, fiber.StatusForbidden, "Tenant is inactive", nil)
 		}
+		// An active subscription (paid or free plan) is always valid regardless of
+		// trial_ends_at. The trial window only grants access when the subscription
+		// itself is not active (e.g. a brand-new tenant still trialing).
 		if tenant.SubscriptionStatus != entity.StatusActive {
-			m.logger.Error("Tenant subscription is not active")
-			return helpers.Respond(c, fiber.StatusForbidden, "Tenant subscription is not active", nil)
-		}
-		if tenant.TrialEndsAt.Valid && tenant.TrialEndsAt.Time.Before(time.Now()) {
-			m.logger.Error("Tenant subscription has expired")
-			return helpers.Respond(c, fiber.StatusForbidden, "Tenant subscription has expired", nil)
+			onTrial := tenant.TrialEndsAt.Valid && tenant.TrialEndsAt.Time.After(time.Now())
+			if !onTrial {
+				m.logger.Error("Tenant subscription is not active and trial expired",
+					zap.String("status", tenant.SubscriptionStatus))
+				return helpers.Respond(c, fiber.StatusForbidden, "Tenant subscription is not active", nil)
+			}
 		}
 
 		// Propagate the tenant id into the request context so that

@@ -15,7 +15,6 @@ var (
 type UpdateProfileRequest struct {
 	FullName string `json:"full_name" validate:"required"`
 	Email    string `json:"email" validate:"email"`
-	Username string `json:"username" validate:"required"`
 	Phone    string `json:"phone" validate:"omitempty,e164"`
 }
 type ChangePasswordRequest struct {

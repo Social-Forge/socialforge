@@ -1,6 +1,15 @@
 import { PUBLIC_API_URL } from '$env/static/public';
 import type { RequestEvent } from '@sveltejs/kit';
 
+const BACKEND_COOKIE_ALLOWLIST = new Set([
+	'access_token',
+	'refresh_token',
+	'twofa_session_id',
+	'oauth_backend_session',
+	'csrf_token',
+	'XSRF-TOKEN'
+]);
+
 export class ApiHandler {
 	private event: RequestEvent;
 	private baseUrl: string;
@@ -23,7 +32,8 @@ export class ApiHandler {
 			this.event.request.headers.get('x-forwarded-protocol') ||
 			(url.protocol ? url.protocol.replace(':', '') : 'https');
 
-		const clientOrigin = `${clientProto.startsWith('http') ? '' : clientProto + '://'}${clientHost}`;
+		const normalizedProto = clientProto.includes('://') ? clientProto : `${clientProto}://`;
+		const clientOrigin = `${normalizedProto}${clientHost}`;
 
 		headers.set('Host', clientHost || '');
 		headers.set('X-Forwarded-Host', clientHost || '');
@@ -76,11 +86,10 @@ export class ApiHandler {
 		}
 	}
 	private getCookieString(): string {
-		const cookies: string[] = [];
-
-		for (const [key, value] of Object.entries(this.event.cookies.getAll())) {
-			cookies.push(`${key}=${value}`);
-		}
+		const cookies = this.event.cookies
+			.getAll()
+			.filter((cookie) => BACKEND_COOKIE_ALLOWLIST.has(cookie.name))
+			.map((cookie) => `${cookie.name}=${cookie.value}`);
 
 		return cookies.join('; ');
 	}
@@ -132,12 +141,56 @@ export class ApiHandler {
 		}
 
 		try {
+			// #region debug-point D:api-request-start
+			fetch('http://127.0.0.1:7777/event', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					sessionId: 'oauth-socket-fail',
+					runId: 'post-fix',
+					hypothesisId: 'D',
+					location: 'frontend/src/lib/server/api.ts:createApiRequest',
+					msg: '[DEBUG] API request started',
+					data: {
+						method,
+						path,
+						baseUrl: this.baseUrl,
+						hasAuth: Boolean(options.auth),
+						hasCookieHeader: Boolean(cookieString),
+						hasBody: Boolean(requestBody)
+					},
+					ts: Date.now()
+				})
+			}).catch(() => {});
+			// #endregion
 			const response = await fetch(`${this.baseUrl}${path}`, {
 				method,
 				headers,
 				body: requestBody,
 				credentials: 'include'
 			});
+
+			// #region debug-point D:api-request-response
+			fetch('http://127.0.0.1:7777/event', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					sessionId: 'oauth-socket-fail',
+					runId: 'post-fix',
+					hypothesisId: 'D',
+					location: 'frontend/src/lib/server/api.ts:createApiRequest',
+					msg: '[DEBUG] API response received',
+					data: {
+						method,
+						path,
+						status: response.status,
+						ok: response.ok,
+						contentType: response.headers.get('content-type')
+					},
+					ts: Date.now()
+				})
+			}).catch(() => {});
+			// #endregion
 
 			const responseData: ApiResponse<T> = await response.json().catch(() => ({
 				status: response.status,
@@ -154,6 +207,28 @@ export class ApiHandler {
 				error: responseData.error
 			};
 		} catch (error: any) {
+			// #region debug-point D:api-request-error
+			fetch('http://127.0.0.1:7777/event', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					sessionId: 'oauth-socket-fail',
+					runId: 'post-fix',
+					hypothesisId: 'D',
+					location: 'frontend/src/lib/server/api.ts:createApiRequest',
+					msg: '[DEBUG] API request failed',
+					data: {
+						method,
+						path,
+						errorMessage: error?.message,
+						errorName: error?.name,
+						causeCode: error?.cause?.code,
+						socket: error?.cause?.socket
+					},
+					ts: Date.now()
+				})
+			}).catch(() => {});
+			// #endregion
 			console.error('❌ API Request failed:', error);
 			return {
 				status: 500,

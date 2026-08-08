@@ -11,14 +11,6 @@ export interface Contact {
 	updated_at: string;
 }
 
-export interface PageMeta {
-	page: number;
-	per_page: number;
-	total: number;
-	total_pages: number;
-	has_more: boolean;
-}
-
 export interface ContactListParams {
 	page?: number;
 	perPage?: number;
@@ -45,10 +37,14 @@ export class ContactHandler extends BaseHandler {
 	}
 
 	async setBlocked(id: string, blocked: boolean) {
-		return this.api.authRequest('POST', `/contacts/protected/${id}/${blocked ? 'block' : 'unblock'}`);
+		return this.api.authRequest(
+			'POST',
+			`/contacts/protected/${id}/${blocked ? 'block' : 'unblock'}`
+		);
 	}
 
 	async remove(id: string) {
 		return this.api.authRequest('DELETE', `/contacts/protected/${id}`);
 	}
 }
+

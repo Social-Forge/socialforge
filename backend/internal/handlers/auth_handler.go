@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+        "fmt"
 	"github/socialforge/internal/dto"
 	"github/socialforge/internal/helpers"
 	"github/socialforge/internal/middlewares"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+        "time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/markbates/goth/gothic"
@@ -202,6 +204,9 @@ func (h *AuthHandler) RefreshToken(c fiber.Ctx) error {
 	return helpers.Respond(c, fiber.StatusOK, "Token refreshed successfully", payload)
 }
 func (h *AuthHandler) OAuthRedirect(c fiber.Ctx) error {
+        // #region debug-point B:oauth-redirect-entry
+        go func(provider, path, query string) { _, _ = http.Post("http://127.0.0.1:7777/event", "application/json", strings.NewReader(fmt.Sprintf(`{"sessionId":"oauth-socket-fail","runId":"post-fix","hypothesisId":"B","location":"backend/internal/handlers/auth_handler.go:OAuthRedirect","msg":"[DEBUG] Backend OAuth redirect entered","data":{"provider":%q,"path":%q,"query":%q},"ts":%d}`, provider, path, query, time.Now().UnixMilli()))) }(c.Params("provider"), c.Path(), string(c.Request().URI().QueryString()))
+        // #endregion
 	adapter := &FiberContextAdapter{ctx: c}
 
 	gothic.BeginAuthHandler(adapter.ResponseWriter(), adapter.Request())
@@ -211,10 +216,17 @@ func (h *AuthHandler) OAuthRedirect(c fiber.Ctx) error {
 func (h *AuthHandler) OAuthCallback(c fiber.Ctx) error {
 	ctx := h.ctxinject.HandlerContext(c)
 
+        // #region debug-point B:oauth-callback-entry
+        go func(provider, path, query string) { _, _ = http.Post("http://127.0.0.1:7777/event", "application/json", strings.NewReader(fmt.Sprintf(`{"sessionId":"oauth-socket-fail","runId":"post-fix","hypothesisId":"B","location":"backend/internal/handlers/auth_handler.go:OAuthCallback","msg":"[DEBUG] Backend OAuth callback entered","data":{"provider":%q,"path":%q,"query":%q},"ts":%d}`, provider, path, query, time.Now().UnixMilli()))) }(c.Params("provider"), c.Path(), string(c.Request().URI().QueryString()))
+        // #endregion
+
 	adapter := &FiberContextAdapter{ctx: c}
 
 	user, err := gothic.CompleteUserAuth(adapter.ResponseWriter(), adapter.Request())
 	if err != nil {
+                // #region debug-point B:oauth-callback-goth-error
+                go func(provider, errMsg string) { _, _ = http.Post("http://127.0.0.1:7777/event", "application/json", strings.NewReader(fmt.Sprintf(`{"sessionId":"oauth-socket-fail","runId":"post-fix","hypothesisId":"B","location":"backend/internal/handlers/auth_handler.go:OAuthCallback","msg":"[DEBUG] Backend OAuth callback goth failed","data":{"provider":%q,"error":%q},"ts":%d}`, provider, errMsg, time.Now().UnixMilli()))) }(c.Params("provider"), err.Error())
+                // #endregion
 		return helpers.Respond(c, fiber.StatusInternalServerError, "Failed to complete auth", nil)
 	}
 
@@ -229,8 +241,15 @@ func (h *AuthHandler) OAuthCallback(c fiber.Ctx) error {
 
 	response, err := h.authService.OAuthLoginOrRegister(ctx, &user, platform, ip)
 	if err != nil {
+                // #region debug-point A:oauth-login-register-error
+                go func(provider, errMsg string) { _, _ = http.Post("http://127.0.0.1:7777/event", "application/json", strings.NewReader(fmt.Sprintf(`{"sessionId":"oauth-socket-fail","runId":"post-fix","hypothesisId":"A","location":"backend/internal/handlers/auth_handler.go:OAuthCallback","msg":"[DEBUG] Backend OAuth login/register failed","data":{"provider":%q,"error":%q},"ts":%d}`, provider, errMsg, time.Now().UnixMilli()))) }(c.Params("provider"), err.Error())
+                // #endregion
 		return helpers.Respond(c, fiber.StatusInternalServerError, "Failed to complete oauth login", nil)
 	}
+
+        // #region debug-point A:oauth-login-register-success
+        go func(provider, userID string) { _, _ = http.Post("http://127.0.0.1:7777/event", "application/json", strings.NewReader(fmt.Sprintf(`{"sessionId":"oauth-socket-fail","runId":"post-fix","hypothesisId":"A","location":"backend/internal/handlers/auth_handler.go:OAuthCallback","msg":"[DEBUG] Backend OAuth login/register succeeded","data":{"provider":%q,"userId":%q},"ts":%d}`, provider, userID, time.Now().UnixMilli()))) }(c.Params("provider"), response.User.ID.String())
+        // #endregion
 
 	return helpers.Respond(c, fiber.StatusOK, "OAuth login successful", response)
 }

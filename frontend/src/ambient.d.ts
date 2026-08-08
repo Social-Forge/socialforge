@@ -1,5 +1,5 @@
 declare global {
-	interface ApiResponse<T = any, M extends Record<string, any> = ApiMeta> {
+	interface ApiResponse<T = any, M extends Record<string, any> = PageMeta> {
 		status: number;
 		success: boolean;
 		message: string;
@@ -15,6 +15,13 @@ declare global {
 		total_pages: number;
 		has_prev: boolean;
 		has_next: boolean;
+	}
+	interface PageMeta {
+		page: number;
+		per_page: number;
+		total: number;
+		total_pages: number;
+		has_more: boolean;
 	}
 	interface ApiError {
 		code: string;

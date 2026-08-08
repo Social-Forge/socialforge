@@ -22,7 +22,7 @@
 	} = $props();
 </script>
 
-<div class="hidden h-full w-[20%] border-r border-border bg-muted px-3 py-7.5 lg:block lg:px-10">
+<div class="hidden h-full w-[20%] border border-border bg-card px-3 py-7.5 lg:block lg:px-10">
 	<div class="mb-4 text-lg font-medium text-primary">Settings</div>
 	<div class="space-y-2">
 		{#each menus as item, index (index)}

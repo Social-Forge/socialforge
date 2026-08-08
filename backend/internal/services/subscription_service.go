@@ -221,4 +221,7 @@ func applyPlanToTenant(t *entity.Tenant, plan *entity.Plan) {
 	}
 	t.SubscriptionPlan = plan.Code
 	t.SubscriptionStatus = entity.StatusActive
+	// An active plan supersedes any trial window — clear it so the tenant is not
+	// gated by a stale trial_ends_at.
+	t.TrialEndsAt = entity.NullTime{}
 }

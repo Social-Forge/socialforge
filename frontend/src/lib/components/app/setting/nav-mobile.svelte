@@ -21,23 +21,20 @@
 		onMenuChange?: (menu: SettingMenu) => void;
 	} = $props();
 
-	let selectedMenu = $state<SettingMenu | null>(null);
-
 	function handleMenuChange(menu: SettingMenu) {
-		selectedMenu = menu;
 		onMenuChange?.(menu);
 	}
 </script>
 
 <Sheet.Root>
-	<Sheet.Trigger class={buttonVariants({ variant: 'ghost', class: 'mt-6' })}>
+	<Sheet.Trigger class={buttonVariants({ variant: 'outline', class: 'mt-6' })}>
 		<ChevronLeft />
-		{selectedMenu?.title}
+		Settings
 	</Sheet.Trigger>
 	<Sheet.Content side="left">
 		<Sheet.Header>
-			<Sheet.Title class="sr-only">{selectedMenu?.title}</Sheet.Title>
-			<Sheet.Description class="sr-only">{selectedMenu?.desc}</Sheet.Description>
+			<Sheet.Title class="sr-only"></Sheet.Title>
+			<Sheet.Description class="sr-only"></Sheet.Description>
 		</Sheet.Header>
 
 		<div class="space-y-2 px-4">

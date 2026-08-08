@@ -10,6 +10,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
+	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { Bot, Plus, Pencil, Trash2, Loader2 } from '@lucide/svelte';
 	import type { AIAgent, AIKnowledge, AIPlaybook, AIAsset } from '$lib/server/ai-agent';
 
@@ -40,15 +41,30 @@
 		s_handoff: boolean;
 	};
 	const empty: Form = {
-		name: '', provider: 'claude', model: '', system_prompt: '',
-		temperature: 0.7, max_tokens: 1024, auto_reply_enabled: true, is_active: true,
-		p_name: '', p_tone: '', p_gender: '', p_greeting: '', p_soul: '',
-		g_rules: '', s_topics: '', s_handoff: true
+		name: '',
+		provider: 'claude',
+		model: '',
+		system_prompt: '',
+		temperature: 0.7,
+		max_tokens: 1024,
+		auto_reply_enabled: true,
+		is_active: true,
+		p_name: '',
+		p_tone: '',
+		p_gender: '',
+		p_greeting: '',
+		p_soul: '',
+		g_rules: '',
+		s_topics: '',
+		s_handoff: true
 	};
 	let form = $state<Form>({ ...empty });
 
 	function lines(s: string): string[] {
-		return s.split('\n').map((x) => x.trim()).filter(Boolean);
+		return s
+			.split('\n')
+			.map((x) => x.trim())
+			.filter(Boolean);
 	}
 
 	function openCreate() {
@@ -185,7 +201,10 @@
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				name: pbName,
-				keywords: pbKeywords.split(',').map((x) => x.trim()).filter(Boolean),
+				keywords: pbKeywords
+					.split(',')
+					.map((x) => x.trim())
+					.filter(Boolean),
 				instruction: pbInstruction
 			})
 		});
@@ -229,66 +248,70 @@
 	}
 </script>
 
-<div class="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-xl font-semibold">AI Agents</h1>
+<div class="h-[calc(100dvh-70px)] w-full overflow-y-auto bg-background lg:h-full">
+	<div class="m-10">
+		<div class="grid gap-1">
+			<div class="text-base font-medium lg:text-xl">AI Agents</div>
 			<p class="text-sm text-muted-foreground">
 				Kelola agen AI, persona, knowledge, playbook & aset.
 			</p>
 		</div>
-		<Button onclick={openCreate}><Plus class="mr-2 h-4 w-4" /> Agent Baru</Button>
-	</div>
-
-	{#if agents.length === 0}
-		<Card.Root>
-			<Card.Content class="flex flex-col items-center gap-3 py-16 text-center">
-				<Bot class="h-10 w-10 text-muted-foreground" />
-				<p class="text-muted-foreground">Belum ada AI agent. Buat yang pertama.</p>
-				<Button onclick={openCreate}><Plus class="mr-2 h-4 w-4" /> Agent Baru</Button>
-			</Card.Content>
-		</Card.Root>
-	{:else}
-		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-			{#each agents as a (a.id)}
-				<Card.Root class="flex flex-col">
-					<Card.Header>
-						<div class="flex items-start justify-between gap-2">
-							<div class="flex items-center gap-3">
-								<div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-									<Bot class="h-5 w-5 text-primary" />
-								</div>
-								<div>
-									<Card.Title class="text-base">{a.name}</Card.Title>
-									<div class="text-xs text-muted-foreground">{a.provider} · {a.model}</div>
-								</div>
-							</div>
-							<Badge variant={a.is_active ? 'default' : 'secondary'}>
-								{a.is_active ? 'Aktif' : 'Nonaktif'}
-							</Badge>
-						</div>
-					</Card.Header>
-					<Card.Content class="flex-1">
-						<p class="line-clamp-3 text-sm text-muted-foreground">{a.system_prompt}</p>
-						<div class="mt-3 flex flex-wrap gap-1">
-							{#if a.persona?.agent_name}
-								<Badge variant="outline">{a.persona.agent_name}</Badge>
-							{/if}
-							{#if a.auto_reply_enabled}<Badge variant="outline">Auto-reply</Badge>{/if}
-						</div>
-					</Card.Content>
-					<Card.Footer class="gap-2">
-						<Button variant="outline" size="sm" onclick={() => openEdit(a)}>
-							<Pencil class="mr-1 h-3.5 w-3.5" /> Edit
-						</Button>
-						<Button variant="ghost" size="sm" class="text-red-600" onclick={() => removeAgent(a)}>
-							<Trash2 class="mr-1 h-3.5 w-3.5" /> Hapus
-						</Button>
-					</Card.Footer>
-				</Card.Root>
-			{/each}
+		<div class="flex items-center justify-end gap-3">
+			<Button onclick={openCreate}><Plus class="mr-2 h-4 w-4" /> Agent Baru</Button>
 		</div>
-	{/if}
+		<Separator class="my-6" />
+		{#if agents.length === 0}
+			<Card.Root>
+				<Card.Content class="flex flex-col items-center gap-3 py-16 text-center">
+					<Bot class="h-10 w-10 text-muted-foreground" />
+					<p class="text-muted-foreground">Belum ada AI agent. Buat yang pertama.</p>
+					<Button onclick={openCreate}><Plus class="mr-2 h-4 w-4" /> Agent Baru</Button>
+				</Card.Content>
+			</Card.Root>
+		{:else}
+			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+				{#each agents as a (a.id)}
+					<Card.Root class="flex flex-col">
+						<Card.Header>
+							<div class="flex items-start justify-between gap-2">
+								<div class="flex items-center gap-3">
+									<div
+										class="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10"
+									>
+										<Bot class="h-5 w-5 text-primary" />
+									</div>
+									<div>
+										<Card.Title class="text-base">{a.name}</Card.Title>
+										<div class="text-xs text-muted-foreground">{a.provider} · {a.model}</div>
+									</div>
+								</div>
+								<Badge variant={a.is_active ? 'default' : 'secondary'}>
+									{a.is_active ? 'Aktif' : 'Nonaktif'}
+								</Badge>
+							</div>
+						</Card.Header>
+						<Card.Content class="flex-1">
+							<p class="line-clamp-3 text-sm text-muted-foreground">{a.system_prompt}</p>
+							<div class="mt-3 flex flex-wrap gap-1">
+								{#if a.persona?.agent_name}
+									<Badge variant="outline">{a.persona.agent_name}</Badge>
+								{/if}
+								{#if a.auto_reply_enabled}<Badge variant="outline">Auto-reply</Badge>{/if}
+							</div>
+						</Card.Content>
+						<Card.Footer class="gap-2">
+							<Button variant="outline" size="sm" onclick={() => openEdit(a)}>
+								<Pencil class="mr-1 h-3.5 w-3.5" /> Edit
+							</Button>
+							<Button variant="ghost" size="sm" class="text-red-600" onclick={() => removeAgent(a)}>
+								<Trash2 class="mr-1 h-3.5 w-3.5" /> Hapus
+							</Button>
+						</Card.Footer>
+					</Card.Root>
+				{/each}
+			</div>
+		{/if}
+	</div>
 </div>
 
 <Sheet.Root bind:open>
@@ -353,21 +376,43 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="persona" class="flex flex-col gap-3 pt-4">
-				<div class="flex flex-col gap-1.5"><Label>Nama Persona</Label><Input bind:value={form.p_name} placeholder="mis. Sari" /></div>
-				<div class="flex flex-col gap-1.5"><Label>Tone</Label><Input bind:value={form.p_tone} placeholder="ramah & ringkas" /></div>
-				<div class="flex flex-col gap-1.5"><Label>Gender</Label><Input bind:value={form.p_gender} placeholder="perempuan" /></div>
-				<div class="flex flex-col gap-1.5"><Label>Salam Pembuka</Label><Input bind:value={form.p_greeting} placeholder="Halo Kak" /></div>
-				<div class="flex flex-col gap-1.5"><Label>Soul / Karakter</Label><Textarea bind:value={form.p_soul} rows={2} placeholder="Antusias, fokus closing" /></div>
+				<div class="flex flex-col gap-1.5">
+					<Label>Nama Persona</Label><Input bind:value={form.p_name} placeholder="mis. Sari" />
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<Label>Tone</Label><Input bind:value={form.p_tone} placeholder="ramah & ringkas" />
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<Label>Gender</Label><Input bind:value={form.p_gender} placeholder="perempuan" />
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<Label>Salam Pembuka</Label><Input bind:value={form.p_greeting} placeholder="Halo Kak" />
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<Label>Soul / Karakter</Label><Textarea
+						bind:value={form.p_soul}
+						rows={2}
+						placeholder="Antusias, fokus closing"
+					/>
+				</div>
 			</Tabs.Content>
 
 			<Tabs.Content value="guardrails" class="flex flex-col gap-3 pt-4">
 				<div class="flex flex-col gap-1.5">
 					<Label>Guardrails (satu aturan per baris)</Label>
-					<Textarea bind:value={form.g_rules} rows={4} placeholder={'Jangan janji diskon tanpa konfirmasi\nJangan bahas SARA'} />
+					<Textarea
+						bind:value={form.g_rules}
+						rows={4}
+						placeholder={'Jangan janji diskon tanpa konfirmasi\nJangan bahas SARA'}
+					/>
 				</div>
 				<div class="flex flex-col gap-1.5">
 					<Label>Topik Sensitif → handoff (satu per baris)</Label>
-					<Textarea bind:value={form.s_topics} rows={3} placeholder={'komplain hukum\nrefund besar'} />
+					<Textarea
+						bind:value={form.s_topics}
+						rows={3}
+						placeholder={'komplain hukum\nrefund besar'}
+					/>
 				</div>
 				<div class="flex items-center justify-between rounded-md border p-3">
 					<Label>Handoff ke manusia</Label>
@@ -388,7 +433,12 @@
 								<div class="text-sm font-medium">{k.title}</div>
 								<div class="line-clamp-2 text-xs text-muted-foreground">{k.content}</div>
 							</div>
-							<Button variant="ghost" size="icon" class="text-red-600" onclick={() => delKnowledge(k.id)}><Trash2 class="h-4 w-4" /></Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="text-red-600"
+								onclick={() => delKnowledge(k.id)}><Trash2 class="h-4 w-4" /></Button
+							>
 						</div>
 					{/each}
 				</Tabs.Content>
@@ -397,17 +447,28 @@
 					<div class="flex flex-col gap-2 rounded-md border p-3">
 						<Input bind:value={pbName} placeholder="Nama playbook" />
 						<Input bind:value={pbKeywords} placeholder="keyword dipisah koma (harga, promo)" />
-						<Textarea bind:value={pbInstruction} rows={2} placeholder="Instruksi saat keyword cocok…" />
+						<Textarea
+							bind:value={pbInstruction}
+							rows={2}
+							placeholder="Instruksi saat keyword cocok…"
+						/>
 						<Button size="sm" onclick={addPlaybook}>Tambah Playbook</Button>
 					</div>
 					{#each playbooks as p (p.id)}
 						<div class="flex items-start justify-between gap-2 rounded-md border p-3">
 							<div>
 								<div class="text-sm font-medium">{p.name}</div>
-								<div class="mt-1 flex flex-wrap gap-1">{#each p.keywords as kw}<Badge variant="outline">{kw}</Badge>{/each}</div>
+								<div class="mt-1 flex flex-wrap gap-1">
+									{#each p.keywords as kw, i (i)}<Badge variant="outline">{kw}</Badge>{/each}
+								</div>
 								<div class="mt-1 line-clamp-2 text-xs text-muted-foreground">{p.instruction}</div>
 							</div>
-							<Button variant="ghost" size="icon" class="text-red-600" onclick={() => delPlaybook(p.id)}><Trash2 class="h-4 w-4" /></Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="text-red-600"
+								onclick={() => delPlaybook(p.id)}><Trash2 class="h-4 w-4" /></Button
+							>
 						</div>
 					{/each}
 				</Tabs.Content>
@@ -427,10 +488,18 @@
 					{#each assets as as (as.id)}
 						<div class="flex items-start justify-between gap-2 rounded-md border p-3">
 							<div>
-								<div class="text-sm font-medium">{as.name} <Badge variant="outline">{as.type}</Badge></div>
+								<div class="text-sm font-medium">
+									{as.name}
+									<Badge variant="outline">{as.type}</Badge>
+								</div>
 								<div class="text-xs text-muted-foreground">{nstr(as.description)}</div>
 							</div>
-							<Button variant="ghost" size="icon" class="text-red-600" onclick={() => delAsset(as.id)}><Trash2 class="h-4 w-4" /></Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="text-red-600"
+								onclick={() => delAsset(as.id)}><Trash2 class="h-4 w-4" /></Button
+							>
 						</div>
 					{/each}
 				</Tabs.Content>

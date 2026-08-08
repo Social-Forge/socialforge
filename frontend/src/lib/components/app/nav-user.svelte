@@ -1,17 +1,37 @@
 <script lang="ts">
 	import * as Avatar from '$lib/components/ui/avatar/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { Button } from '$lib/components/ui/button';
+	import { localizeHref } from '$lib/paraglide/runtime';
 	import {
 		LogOutIcon,
 		SparklesIcon,
 		BadgeCheckIcon,
 		BellIcon,
-		ChevronsUpDownIcon,
 		CreditCardIcon
 	} from '@lucide/svelte';
 
 	let { user }: { user?: UserResponse | null } = $props();
+
+	async function logout() {
+		try {
+			const response = await fetch('/api/user/logout', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+			if (!response.ok) {
+				throw new Error('Logout failed');
+			}
+			const redirectTarget = `${window.location.pathname}${window.location.search}`;
+			const signInHref = localizeHref(`/signin?redirect=${encodeURIComponent(redirectTarget)}`);
+
+			// Use a full navigation so auth pages mount fresh after tearing down the app shell.
+			window.location.assign(signInHref);
+		} catch (error) {
+			console.error('Logout failed:', error);
+		}
+	}
 </script>
 
 <DropdownMenu.Root>
@@ -68,7 +88,7 @@
 			</DropdownMenu.Item>
 		</DropdownMenu.Group>
 		<DropdownMenu.Separator />
-		<DropdownMenu.Item>
+		<DropdownMenu.Item onSelect={logout}>
 			<LogOutIcon />
 			Log out
 		</DropdownMenu.Item>

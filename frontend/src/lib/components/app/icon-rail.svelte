@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { LightSwitch } from '$lib/components/extras/light-switch';
+	import { LanguageSwitcher } from '$lib/components/extras/language-switcher';
 	import { AppNavUser, AppNavItem } from '$lib/components/app';
 	import { Separator } from '$lib/components/ui/separator';
 	import {
@@ -14,9 +15,18 @@
 		Funnel,
 		Headset
 	} from '@lucide/svelte';
-	import { localizeHref } from '$lib/paraglide/runtime';
+	import { locales as availableLocales, localizeHref } from '$lib/paraglide/runtime';
+	import { LanguageLabels } from '$lib/utils/localize-path.js';
 
-	let { user }: { user?: UserResponse | null } = $props();
+	let { user, lang = 'us' }: { user?: UserResponse | null; lang?: string } = $props();
+
+	// svelte-ignore state_referenced_locally
+	let currentLang = $state(lang);
+
+	const languages = availableLocales.map((code) => ({
+		code,
+		label: LanguageLabels[code] ?? code.toUpperCase()
+	}));
 
 	const topItems = [
 		{ icon: MessageSquare, label: 'Chats', href: '/app/chats' },
@@ -28,7 +38,7 @@
 
 	const bottomItems = [
 		{ icon: LayoutGrid, label: 'Integrations', href: '/app/integrations' },
-		{ icon: Settings, label: 'Settings', href: '/app/settings' }
+		{ icon: Settings, label: 'Settings', href: '/app/settings/account?tab=profile' }
 	];
 
 	async function onNavClick(link: string) {
@@ -66,6 +76,7 @@
 
 	<div class="flex flex-col items-center gap-3">
 		<LightSwitch />
+		<LanguageSwitcher {languages} bind:value={currentLang} variant="outline" />
 		<AppNavUser {user} />
 	</div>
 </nav>

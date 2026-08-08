@@ -56,6 +56,11 @@ export class SessionHelper extends BaseHandler {
 		this.event.cookies.delete('access_token', { path: '/' });
 		this.event.cookies.delete('refresh_token', { path: '/' });
 		this.event.cookies.delete('twofa_session_id', { path: '/' });
+                this.event.cookies.delete('oauth_redirect_target', { path: '/' });
+                this.event.cookies.delete('oauth_auth_mode', { path: '/' });
+                this.event.cookies.delete('oauth_backend_session', { path: '/' });
+                this.event.cookies.delete('csrf_token', { path: '/' });
+                this.event.cookies.delete('XSRF-TOKEN', { path: '/' });
 	};
 	isAuthenticated = async (): Promise<boolean> => {
 		const accessToken = this.getAccessToken();

@@ -1,5 +1,10 @@
 import { BaseHandler } from './base';
-import type { ChatSummary, ChatMessage, MessageStatus, ChipLabel } from '$lib/components/app/chat/types';
+import type {
+	ChatSummary,
+	ChatMessage,
+	MessageStatus,
+	ChipLabel
+} from '$lib/components/app/chat/types';
 
 /** Raw conversation list item returned by GET /conversations/protected (enriched). */
 interface ConversationListItem {
@@ -71,7 +76,7 @@ function mapMessage(m: BackendMessage): ChatMessage {
 	return {
 		id: m.id,
 		chatId: m.conversation_id,
-		direction: (m.direction === 'in' ? 'in' : 'out'),
+		direction: m.direction === 'in' ? 'in' : 'out',
 		timestamp: m.created_at,
 		status: m.direction === 'out' ? mapStatus(m.status) : undefined,
 		text: m.body || undefined
@@ -87,7 +92,9 @@ export interface ConversationListFilters {
 
 export class ConversationHandler extends BaseHandler {
 	/** List conversations mapped to the chat-list UI shape. */
-	async list(filters: ConversationListFilters = {}): Promise<ChatSummary[]> {
+	async list(
+		filters: ConversationListFilters = {}
+	): Promise<{ data: ChatSummary[]; meta: PageMeta }> {
 		const qs = new URLSearchParams();
 		if (filters.status) qs.set('status', filters.status);
 		if (filters.search) qs.set('search', filters.search);
@@ -98,18 +105,32 @@ export class ConversationHandler extends BaseHandler {
 			'GET',
 			`/conversations/protected/${suffix}`
 		);
-		if (!res.success || !res.data) return [];
-		return res.data.map(mapConversation);
+		const meta = (res.meta as PageMeta) ?? {
+			page: 1,
+			per_page: 20,
+			total: 0,
+			total_pages: 0,
+			has_more: false
+		};
+		if (!res.success || !res.data) return { data: [], meta };
+		return { data: res.data.map(mapConversation), meta };
 	}
 
 	/** Messages for a conversation, oldest-first (backend returns newest-first). */
-	async messages(conversationId: string): Promise<ChatMessage[]> {
+	async messages(conversationId: string): Promise<{ data: ChatMessage[]; meta: PageMeta }> {
 		const res = await this.api.authRequest<BackendMessage[]>(
 			'GET',
 			`/conversations/protected/${conversationId}/messages`
 		);
-		if (!res.success || !res.data) return [];
-		return res.data.map(mapMessage).reverse();
+		const meta = (res.meta as PageMeta) ?? {
+			page: 1,
+			per_page: 20,
+			total: 0,
+			total_pages: 0,
+			has_more: false
+		};
+		if (!res.success || !res.data) return { data: [], meta };
+		return { data: res.data.map(mapMessage).reverse(), meta };
 	}
 
 	/** Send an agent text reply; returns the mapped message on success. */

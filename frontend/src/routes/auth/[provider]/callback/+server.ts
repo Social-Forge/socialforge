@@ -14,6 +14,10 @@ export const GET = async ({ params, url, locals, cookies }) => {
         const redirectTarget = sanitizeRedirectTarget(cookies.get(OAUTH_REDIRECT_COOKIE));
         const backendSessionCookie = cookies.get(OAUTH_SESSION_COOKIE);
 
+        // #region debug-point C:oauth-callback-entry
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: 'oauth-socket-fail', runId: 'post-fix', hypothesisId: 'C', location: 'frontend/src/routes/auth/[provider]/callback/+server.ts', msg: '[DEBUG] OAuth callback route entered', data: { provider, authPage, redirectTarget, hasBackendSessionCookie: Boolean(backendSessionCookie), code: url.searchParams.get('code'), state: url.searchParams.get('state'), error: url.searchParams.get('error') }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
+
         if (!provider || !isSocialAuthProvider(provider)) {
                 throw redirect(302, localizePath(authPage, locals.lang));
         }
@@ -23,6 +27,10 @@ export const GET = async ({ params, url, locals, cookies }) => {
                 url.searchParams,
                 backendSessionCookie ? { Cookie: backendSessionCookie } : undefined
         );
+
+        // #region debug-point C:oauth-callback-backend-result
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: 'oauth-socket-fail', runId: 'post-fix', hypothesisId: 'C', location: 'frontend/src/routes/auth/[provider]/callback/+server.ts', msg: '[DEBUG] OAuth callback backend result received', data: { provider, success: response.success, status: response.status, message: response.message, hasAccessToken: Boolean(response.data?.access_token), hasRefreshToken: Boolean(response.data?.refresh_token) }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
 
         cookies.delete(OAUTH_REDIRECT_COOKIE, { path: '/' });
         cookies.delete(OAUTH_MODE_COOKIE, { path: '/' });

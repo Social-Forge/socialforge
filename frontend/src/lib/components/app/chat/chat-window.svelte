@@ -18,7 +18,7 @@
 		if (chatsStore.hasMessages(id)) return;
 		chatsStore.setMessages(id, []); // mark as loading to avoid refetch
 		fetch(`/api/chats/${id}/messages`)
-			.then((r) => (r.ok ? r.json() : { data: [] }))
+			.then((r) => (r.ok ? r.json() : { data: [], meta: {} }))
 			.then((res) => chatsStore.setMessages(id, (res.data as ChatMessage[]) ?? []))
 			.catch(() => chatsStore.setMessages(id, []));
 	});

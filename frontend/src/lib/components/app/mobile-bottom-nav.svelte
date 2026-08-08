@@ -23,7 +23,7 @@
 		{ icon: LayoutGrid, label: 'Integrations', href: '/app/integrations' }
 	];
 	const moreItems = [
-		{ icon: Settings, label: 'Settings', href: '/app/settings' },
+		{ icon: Settings, label: 'Settings', href: '/app/settings/account?tab=profile' },
 		{ icon: ChartLine, label: 'Analytics', href: '/app/analytics' },
 		{ icon: Headset, label: 'Agent', href: '/app/agents' }
 	];
